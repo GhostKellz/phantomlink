@@ -1,5 +1,6 @@
 # phantomlink
 
+![CI](https://github.com/ghostkellz/phantomlink/actions/workflows/ci.yml/badge.svg)
 ![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-informational?logo=rust&logoColor=white&color=orange)
 ![XLR Ready](https://img.shields.io/badge/XLR%20Input-Ready-blueviolet?logo=music&color=blueviolet)
 ![Audio Mixer](https://img.shields.io/badge/Audio-Mixer-blue?logo=waves&color=blue)

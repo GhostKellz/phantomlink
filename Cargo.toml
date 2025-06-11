@@ -1,0 +1,11 @@
+[package]
+name = "phantomlink"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.27"
+dirs = "5"
+alsa = "0.7"
+cpal = "0.16"
+serde = "1.0"

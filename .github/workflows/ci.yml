@@ -23,16 +23,12 @@ jobs:
 
       - name: Clippy Check
         run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: ./phantomlink
 
       - name: Format Check
         run: cargo fmt --check
-        working-directory: ./phantomlink
 
       - name: Build
         run: cargo build --verbose
-        working-directory: ./phantomlink
 
       - name: Test
         run: cargo test --verbose
-        working-directory: ./phantomlink

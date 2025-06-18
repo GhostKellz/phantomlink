@@ -4,12 +4,29 @@ mod rnnoise;
 mod audio;
 mod scarlett;
 mod config;
+mod jack_client;
+mod vst_host;
+
+use eframe::egui;
 
 fn main() {
-    let options = eframe::NativeOptions::default();
+    // Enable high DPI support and modern GUI features
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_min_inner_size([800.0, 600.0])
+            .with_resizable(true)
+            .with_transparent(true),
+        ..Default::default()
+    };
+    
     eframe::run_native(
-        "Phantomlink Mixer",
+        "PhantomLink - Professional Audio Mixer",
         options,
-        Box::new(|_cc| Box::new(gui::PhantomlinkApp::default())),
+        Box::new(|cc| {
+            // Configure egui for better rendering
+            cc.egui_ctx.set_pixels_per_point(1.0);
+            Box::new(gui::PhantomlinkApp::default())
+        }),
     ).unwrap();
 }

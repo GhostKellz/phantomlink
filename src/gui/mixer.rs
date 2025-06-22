@@ -1,6 +1,5 @@
 use eframe::egui;
 use crate::gui::widgets;
-use crate::gui::theme::SpaceTheme;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]

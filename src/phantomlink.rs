@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 // Re-export the VST types from vst_host module
-pub use crate::vst_host::{VstProcessor, VstScanner, VstPluginInfo};
+pub use crate::vst_host::{VstScanner, VstPluginInfo, VstCategory};
 
 pub fn find_vst_plugins() -> Vec<PathBuf> {
     let dirs = vec![
@@ -24,6 +24,12 @@ pub fn find_vst_plugins() -> Vec<PathBuf> {
         }
     }
     plugins
+}
+
+pub fn scan_vst_plugins() -> Result<Vec<VstPluginInfo>, Box<dyn std::error::Error>> {
+    let mut scanner = VstScanner::new();
+    scanner.scan()?;
+    Ok(scanner.get_plugins().to_vec())
 }
 
 // Audio routing configuration

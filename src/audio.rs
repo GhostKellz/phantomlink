@@ -1,12 +1,12 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Stream, StreamConfig};
-// Removed crossbeam_channel import
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use crate::rnnoise::Rnnoise;
 use crate::vst_host::VstProcessor;
 use crate::gui::visualizer::{SpectrumAnalyzer, VUMeter};
 use crossbeam_channel::{Receiver, Sender};
+use std::time::Instant;
 
 const BUFFER_SIZE: usize = 1024;
 const CHANNEL_COUNT: usize = 4;
@@ -20,6 +20,7 @@ pub struct ChannelProcessor {
     pub solo: bool,
     buffer: Vec<f32>,
     vu_meter: VUMeter,
+    last_levels: [f32; 2], // Store last peak/rms levels
 }
 
 impl ChannelProcessor {
@@ -33,6 +34,7 @@ impl ChannelProcessor {
             solo: false,
             buffer: vec![0.0; BUFFER_SIZE],
             vu_meter: VUMeter::new(128),
+            last_levels: [0.0, 0.0],
         }
     }
 
@@ -82,6 +84,9 @@ impl ChannelProcessor {
         // Update VU meter and get levels
         let (peak, rms) = self.vu_meter.process(&stereo_output, dt);
         let levels = [peak, rms];
+        
+        // Store levels for GUI access
+        self.last_levels = levels;
         
         (stereo_output, levels)
     }
@@ -142,44 +147,74 @@ impl AudioEngine {
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
-        let input_device = host.default_input_device().expect("No input device available");
-        let output_device = host.default_output_device().expect("No output device available");
-        let input_config = input_device.default_input_config().unwrap();
-        let output_config = output_device.default_output_config().unwrap();
+        let input_device = host.default_input_device().ok_or("No input device available")?;
+        let output_device = host.default_output_device().ok_or("No output device available")?;
+        
+        let input_config = input_device.default_input_config()?;
+        let output_config = output_device.default_output_config()?;
         let input_config: StreamConfig = input_config.into();
         let output_config: StreamConfig = output_config.into();
 
-        // Create simple buffer for audio routing
-        let audio_buffer = std::sync::Arc::new(std::sync::Mutex::new(VecDeque::<f32>::with_capacity(BUFFER_SIZE * 4)));
+        println!("Input config: {:?}", input_config);
+        println!("Output config: {:?}", output_config);
+
+        // Create shared audio buffer for routing between input and output
+        let audio_buffer = Arc::new(Mutex::new(VecDeque::<f32>::with_capacity(BUFFER_SIZE * 4)));
         let audio_buffer_out = Arc::clone(&audio_buffer);
         
         let channels = Arc::clone(&self.channels);
         let rnnoise = Arc::clone(&self.rnnoise);
+        let spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>> = Arc::clone(&self.spectrum_analyzer);
+        let spectrum_data: Arc<Mutex<Vec<f32>>> = Arc::clone(&self.spectrum_data);
+        
+        let start_time = Instant::now();
         
         // Input stream: capture and process audio
         let input_stream = input_device.build_input_stream(
             &input_config,
             move |data: &[f32], _| {
+                let dt = start_time.elapsed().as_secs_f32() % 1.0; // Frame time for VU meters
+                
                 // Process input through all channels and mix
                 let mut mixed_output = vec![0.0; data.len()];
+                let mut total_levels = [0.0f32; 2];
                 
                 if let (Ok(mut channels), Ok(rnnoise)) = (channels.lock(), rnnoise.lock()) {
                     for channel in channels.iter_mut() {
-                        let (processed, _levels) = channel.process(data, &rnnoise, 0.02); // Assume ~20ms frame
+                        let (processed, levels) = channel.process(data, &rnnoise, 0.02); // ~20ms frame time
+                        
+                        // Mix the processed audio from this channel
                         for (i, &sample) in processed.iter().enumerate() {
                             if i < mixed_output.len() {
-                                mixed_output[i] += sample / CHANNEL_COUNT as f32; // Mix channels
+                                mixed_output[i] += sample / CHANNEL_COUNT as f32; // Average mix
                             }
                         }
+                        
+                        // Accumulate levels for overall monitoring
+                        total_levels[0] = total_levels[0].max(levels[0]); // Peak
+                        total_levels[1] += levels[1] / CHANNEL_COUNT as f32; // RMS average
                     }
                 }
                 
-                // Send processed audio to buffer
+                // Update spectrum analyzer
+                if let Ok(mut analyzer) = spectrum_analyzer.lock() {
+                    let spectrum = analyzer.process(&mixed_output);
+                    if let Ok(mut spectrum_out) = spectrum_data.lock() {
+                        let copy_len = spectrum_out.len().min(spectrum.len());
+                        spectrum_out[..copy_len].copy_from_slice(&spectrum[..copy_len]);
+                    }
+                }
+                
+                // Send processed audio to output buffer
                 if let Ok(mut buffer) = audio_buffer.lock() {
                     for &sample in &mixed_output {
                         if buffer.len() < BUFFER_SIZE * 4 {
+                            buffer.push_back(sample);
+                        } else {
+                            // Buffer is full, drop oldest samples
+                            buffer.pop_front();
                             buffer.push_back(sample);
                         }
                     }
@@ -189,16 +224,21 @@ impl AudioEngine {
                 eprintln!("Input stream error: {}", err);
             },
             None,
-        ).expect("Failed to build input stream");
+        )?;
 
         // Output stream: play processed audio
         let output_stream = output_device.build_output_stream(
             &output_config,
             move |data: &mut [f32], _| {
-                // Fill output buffer from audio buffer
+                // Fill output buffer from processed audio buffer
                 if let Ok(mut buffer) = audio_buffer_out.lock() {
                     for sample in data.iter_mut() {
-                        *sample = buffer.pop_front().unwrap_or(0.0);
+                        *sample = buffer.pop_front().unwrap_or(0.0); // Silence if buffer empty
+                    }
+                } else {
+                    // Fallback: output silence if we can't access buffer
+                    for sample in data.iter_mut() {
+                        *sample = 0.0;
                     }
                 }
             },
@@ -206,13 +246,41 @@ impl AudioEngine {
                 eprintln!("Output stream error: {}", err);
             },
             None,
-        ).expect("Failed to build output stream");
+        )?;
 
-        input_stream.play().expect("Failed to start input stream");
-        output_stream.play().expect("Failed to start output stream");
+        // Start the streams
+        input_stream.play()?;
+        output_stream.play()?;
 
+        // Store streams to keep them alive
         self.input_stream = Some(input_stream);
         self.output_stream = Some(output_stream);
+
+        println!("Audio engine started successfully!");
+        Ok(())
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(input_stream) = self.input_stream.take() {
+            let _ = input_stream.pause();
+        }
+        if let Some(output_stream) = self.output_stream.take() {
+            let _ = output_stream.pause();
+        }
+        println!("Audio engine stopped");
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.input_stream.is_some() && self.output_stream.is_some()
+    }
+
+    pub fn get_channel_levels(&self, channel_idx: usize) -> Option<[f32; 2]> {
+        if let Ok(channels) = self.channels.lock() {
+            if let Some(channel) = channels.get(channel_idx) {
+                return Some(channel.last_levels); // Return actual stored levels
+            }
+        }
+        None
     }
 
     pub fn set_channel_vst(&self, channel_idx: usize, vst_processor: Option<VstProcessor>) {

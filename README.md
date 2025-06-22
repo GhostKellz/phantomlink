@@ -42,12 +42,3 @@ Phantomlink — Unleash your Linux audio workflow.
 
 ---
 
-### Badge Notes:
-- **Crates.io version badge** shows latest published crate version.
-- **Rust version badge** to indicate minimum Rust version compatibility.
-- **Code Size badge** for a quick glimpse of project size.
-- **Downloads badge** for crate popularity.
-
----
-
-If you want, I can generate markdown badges for specific CI/CD platforms or code quality tools next. Just let me know your stack!

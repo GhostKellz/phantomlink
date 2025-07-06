@@ -150,11 +150,40 @@ impl WavelinkTheme {
     }
     
     pub fn translucent_panel_bg(&self) -> egui::Color32 {
-        egui::Color32::from_rgba_premultiplied(15, 22, 40, 180)  // Translucent panel
+        egui::Color32::from_rgba_premultiplied(15, 22, 40, 220)  // More opaque panel bg
     }
     
     pub fn translucent_input_bg(&self) -> egui::Color32 {
-        egui::Color32::from_rgba_premultiplied(25, 36, 64, 160)  // Translucent input
+        egui::Color32::from_rgba_premultiplied(25, 36, 64, 200)  // Translucent input bg
+    }
+    
+    pub fn glass_button_bg(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(34, 197, 94, 40)  // Subtle green glass effect
+    }
+    
+    pub fn glass_button_hover(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(34, 197, 94, 80)  // Stronger green glass on hover
+    }
+    
+    pub fn glass_button_active(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(34, 197, 94, 120) // Full green glass when pressed
+    }
+    
+    // Status indicator colors
+    pub fn status_active(&self) -> egui::Color32 {
+        self.green_primary
+    }
+    
+    pub fn status_inactive(&self) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(120, 128, 140, 180)
+    }
+    
+    pub fn status_warning(&self) -> egui::Color32 {
+        self.warning
+    }
+    
+    pub fn status_error(&self) -> egui::Color32 {
+        self.error
     }
     
     pub fn translucent_deep_bg(&self) -> egui::Color32 {

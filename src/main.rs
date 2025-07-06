@@ -6,6 +6,7 @@ mod scarlett;
 mod config;
 mod jack_client;
 mod vst_host;
+mod advanced_denoising;
 
 use eframe::egui;
 

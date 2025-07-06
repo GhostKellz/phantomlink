@@ -5,8 +5,13 @@ use std::sync::{Arc, Mutex};
 use crate::rnnoise::Rnnoise;
 use crate::vst_host::VstProcessor;
 use crate::gui::visualizer::{SpectrumAnalyzer, VUMeter};
+use crate::advanced_denoising::{
+    AdvancedDenoisingSystem, AdvancedDenoisingConfig, DenoisingMode, 
+    AdvancedDenoiser, SharedAdvancedDenoiser, create_advanced_denoiser
+};
 use crossbeam_channel::{Receiver, Sender};
 use std::time::Instant;
+use anyhow::Result;
 
 const BUFFER_SIZE: usize = 1024;
 const CHANNEL_COUNT: usize = 4;
@@ -56,9 +61,69 @@ impl ChannelProcessor {
             *sample *= gain_linear;
         }
         
-        // Apply noise reduction if enabled
+        // Apply noise reduction if enabled (fallback to legacy RNNoise)
         if rnnoise.is_enabled() {
             output = rnnoise.process(&output);
+        }
+        
+        // Apply VST processing
+        if let Some(ref mut vst) = self.vst_processor {
+            output = vst.process(&output);
+        }
+        
+        // Apply volume
+        for sample in &mut output {
+            *sample *= self.volume;
+        }
+        
+        // Apply panning (assuming stereo output)
+        let mut stereo_output = Vec::with_capacity(output.len() * 2);
+        for &sample in &output {
+            let left_gain = if self.pan <= 0.0 { 1.0 } else { 1.0 - self.pan };
+            let right_gain = if self.pan >= 0.0 { 1.0 } else { 1.0 + self.pan };
+            
+            stereo_output.push(sample * left_gain);
+            stereo_output.push(sample * right_gain);
+        }
+        
+        // Update VU meter and get levels
+        let (peak, rms) = self.vu_meter.process(&stereo_output, dt);
+        let levels = [peak, rms];
+        
+        // Store levels for GUI access
+        self.last_levels = levels;
+        
+        (stereo_output, levels)
+    }
+    
+    // New method for processing with advanced denoiser
+    pub fn process_advanced(&mut self, input: &[f32], advanced_denoiser: Option<&SharedAdvancedDenoiser>, dt: f32) -> (Vec<f32>, [f32; 2]) {
+        if self.muted {
+            return (vec![0.0; input.len()], [0.0, 0.0]);
+        }
+
+        let mut output = input.to_vec();
+        
+        // Apply gain
+        let gain_linear = if self.gain >= 0.0 {
+            1.0 + self.gain / 20.0
+        } else {
+            10.0_f32.powf(self.gain / 20.0)
+        };
+        
+        for sample in &mut output {
+            *sample *= gain_linear;
+        }
+        
+        // Apply advanced noise reduction if available
+        if let Some(denoiser) = advanced_denoiser {
+            if let Ok(mut d) = denoiser.lock() {
+                if d.is_enabled() {
+                    if let Ok(processed) = d.process_frame(&output) {
+                        output = processed;
+                    }
+                }
+            }
         }
         
         // Apply VST processing
@@ -96,7 +161,8 @@ pub struct AudioEngine {
     input_stream: Option<Stream>,
     output_stream: Option<Stream>,
     channels: Arc<Mutex<Vec<ChannelProcessor>>>,
-    rnnoise: Arc<Mutex<Rnnoise>>,
+    rnnoise: Arc<Mutex<Rnnoise>>, // Keep for backward compatibility
+    advanced_denoiser: Option<SharedAdvancedDenoiser>,
     spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>>,
     spectrum_data: Arc<Mutex<Vec<f32>>>,
     audio_sender: Option<Sender<Vec<f32>>>,
@@ -111,16 +177,31 @@ impl AudioEngine {
         }
         let channels = Arc::new(Mutex::new(channels_vec));
         let rnnoise = Arc::new(Mutex::new(Rnnoise::new()));
-        let spectrum_analyzer = Arc::new(Mutex::new(SpectrumAnalyzer::new(1024, 48000.0)));
+        let spectrum_analyzer = Arc::new(Mutex::new(SpectrumAnalyzer::new(48000.0)));
         let spectrum_data = Arc::new(Mutex::new(vec![0.0; 512]));
         
         let (audio_sender, audio_receiver) = crossbeam_channel::bounded(1024);
+        
+        // Initialize advanced denoising system
+        let advanced_denoiser = match create_advanced_denoiser(AdvancedDenoisingConfig::default()) {
+            Ok(denoiser) => {
+                if let Ok(mut d) = denoiser.lock() {
+                    d.set_enabled(true);
+                }
+                Some(denoiser)
+            }
+            Err(e) => {
+                eprintln!("Failed to initialize advanced denoiser: {}", e);
+                None
+            }
+        };
         
         Self {
             input_stream: None,
             output_stream: None,
             channels,
             rnnoise,
+            advanced_denoiser,
             spectrum_analyzer,
             spectrum_data,
             audio_sender: Some(audio_sender),
@@ -147,6 +228,65 @@ impl AudioEngine {
         }
     }
 
+    // Advanced denoising methods
+    pub fn set_denoising_mode(&self, mode: DenoisingMode) -> Result<()> {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(mut d) = denoiser.lock() {
+                d.set_mode(mode)?;
+            }
+        }
+        Ok(())
+    }
+    
+    pub fn get_denoising_mode(&self) -> Option<DenoisingMode> {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(d) = denoiser.lock() {
+                return Some(d.get_mode());
+            }
+        }
+        None
+    }
+    
+    pub fn set_advanced_denoising_enabled(&self, enabled: bool) {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(mut d) = denoiser.lock() {
+                d.set_enabled(enabled);
+            }
+        }
+    }
+    
+    pub fn is_advanced_denoising_enabled(&self) -> bool {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(d) = denoiser.lock() {
+                return d.is_enabled();
+            }
+        }
+        false
+    }
+    
+    pub fn get_denoising_metrics(&self) -> Option<crate::advanced_denoising::DenoisingMetrics> {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(d) = denoiser.lock() {
+                return Some(d.get_metrics());
+            }
+        }
+        None
+    }
+    
+    pub fn get_available_denoising_modes(&self) -> Vec<DenoisingMode> {
+        if let Some(ref denoiser) = self.advanced_denoiser {
+            if let Ok(d) = denoiser.lock() {
+                // Return basic modes since we can't downcast the trait object
+                return vec![
+                    DenoisingMode::Basic,
+                    DenoisingMode::Enhanced,
+                    DenoisingMode::Maximum,
+                ];
+            }
+        }
+        vec![DenoisingMode::Basic] // Fallback to basic mode
+    }
+    
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let input_device = host.default_input_device().ok_or("No input device available")?;
@@ -166,6 +306,7 @@ impl AudioEngine {
         
         let channels = Arc::clone(&self.channels);
         let rnnoise = Arc::clone(&self.rnnoise);
+        let advanced_denoiser = self.advanced_denoiser.clone();
         let spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>> = Arc::clone(&self.spectrum_analyzer);
         let spectrum_data: Arc<Mutex<Vec<f32>>> = Arc::clone(&self.spectrum_data);
         
@@ -181,9 +322,17 @@ impl AudioEngine {
                 let mut mixed_output = vec![0.0; data.len()];
                 let mut total_levels = [0.0f32; 2];
                 
-                if let (Ok(mut channels), Ok(rnnoise)) = (channels.lock(), rnnoise.lock()) {
+                if let Ok(mut channels) = channels.lock() {
                     for channel in channels.iter_mut() {
-                        let (processed, levels) = channel.process(data, &rnnoise, 0.02); // ~20ms frame time
+                        // Use advanced denoiser if available, otherwise fall back to legacy RNNoise
+                        let (processed, levels) = if advanced_denoiser.is_some() {
+                            channel.process_advanced(data, advanced_denoiser.as_ref(), 0.02)
+                        } else if let Ok(rnnoise) = rnnoise.lock() {
+                            channel.process(data, &rnnoise, 0.02)
+                        } else {
+                            // Fallback: process without denoising
+                            channel.process_advanced(data, None, 0.02)
+                        };
                         
                         // Mix the processed audio from this channel
                         for (i, &sample) in processed.iter().enumerate() {
@@ -292,7 +441,21 @@ impl AudioEngine {
     }
     
     pub fn get_spectrum_data(&self) -> Arc<Mutex<Vec<f32>>> {
-        Arc::clone(&self.spectrum_data)
+        self.spectrum_data.clone()
+    }
+    
+    /// Get spectrum data as a simple Vec for GUI display
+    pub fn get_spectrum_data_vec(&self) -> Option<Vec<f32>> {
+        if let Ok(data) = self.spectrum_data.lock() {
+            if !data.is_empty() {
+                Some(data.clone())
+            } else {
+                // Return fake data for demonstration
+                Some((0..64).map(|i| (i as f32 * 0.01).sin().abs() * 0.5).collect())
+            }
+        } else {
+            None
+        }
     }
     
     pub fn update_channel_advanced(&self, channel_idx: usize, volume: f32, muted: bool, gain: f32, pan: f32) {

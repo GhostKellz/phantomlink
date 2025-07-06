@@ -179,30 +179,16 @@ impl ModernChannelStrip {
                 
                 ui.add_space(12.0);
                 
-                // Control buttons - Touch-friendly Wavelink style
+                // Control buttons - Modern status toggles
                 ui.horizontal(|ui| {
-                    let mute_color = if self.muted { theme.error } else { theme.text_secondary };
-                    if ui.add(
-                        egui::Button::new(
-                            egui::RichText::new("MUTE")
-                                .size(12.0)
-                                .strong()
-                                .color(mute_color)
-                        ).min_size(egui::vec2(65.0, 32.0))  // Larger touch target
-                    ).clicked() {
+                    if ui.add(status_toggle_button("MUTE", self.muted, theme, StatusButtonType::Mute)).clicked() {
                         self.muted = !self.muted;
                         response.mute_changed = true;
                     }
                     
-                    let solo_color = if self.solo { theme.green_primary } else { theme.text_secondary };
-                    if ui.add(
-                        egui::Button::new(
-                            egui::RichText::new("SOLO")
-                                .size(12.0)
-                                .strong()
-                                .color(solo_color)
-                        ).min_size(egui::vec2(65.0, 32.0))  // Larger touch target
-                    ).clicked() {
+                    ui.add_space(4.0);
+                    
+                    if ui.add(status_toggle_button("SOLO", self.solo, theme, StatusButtonType::Solo)).clicked() {
                         self.solo = !self.solo;
                         response.solo_changed = true;
                     }
@@ -419,4 +405,207 @@ pub fn glow_button(text: &str, color: egui::Color32) -> impl egui::Widget + '_ {
         
         response
     }
+}
+
+// Enhanced modern button with glass effect and consistent theming
+pub fn modern_glass_button<'a>(text: &'a str, theme: &'a WavelinkTheme, enabled: bool) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| {
+        let desired_size = egui::vec2(ui.available_width().min(200.0), 36.0);
+        let response = ui.allocate_response(desired_size, egui::Sense::click());
+        let rect = response.rect;
+        
+        if ui.is_rect_visible(rect) {
+            let bg_color = if !enabled {
+                theme.status_inactive()
+            } else if response.hovered() {
+                theme.glass_button_hover()
+            } else if response.is_pointer_button_down_on() {
+                theme.glass_button_active()
+            } else {
+                theme.glass_button_bg()
+            };
+            
+            let text_color = if enabled {
+                theme.text_primary
+            } else {
+                theme.text_muted
+            };
+            
+            // Draw glass effect background
+            ui.painter().rect(
+                rect,
+                egui::Rounding::same(12.0),
+                bg_color,
+                egui::Stroke::new(1.5, if enabled { theme.green_primary } else { theme.medium_blue }),
+            );
+            
+            // Add subtle inner glow for glass effect
+            if enabled && response.hovered() {
+                let inner_rect = rect.shrink(2.0);
+                ui.painter().rect(
+                    inner_rect,
+                    egui::Rounding::same(10.0),
+                    egui::Color32::TRANSPARENT,
+                    egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(34, 197, 94, 60)),
+                );
+            }
+            
+            // Draw text with proper alignment
+            let text_rect = rect.shrink(8.0);
+            ui.painter().text(
+                text_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::proportional(14.0),
+                text_color,
+            );
+        }
+        
+        response
+    }
+}
+
+// Status indicator button (for MUTE, SOLO, etc.)
+pub fn status_toggle_button<'a>(text: &'a str, active: bool, theme: &'a WavelinkTheme, button_type: StatusButtonType) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| {
+        let desired_size = egui::vec2(60.0, 28.0);
+        let response = ui.allocate_response(desired_size, egui::Sense::click());
+        let rect = response.rect;
+        
+        if ui.is_rect_visible(rect) {
+            let (bg_color, text_color, border_color) = match button_type {
+                StatusButtonType::Mute => if active {
+                    (theme.error, theme.deep_blue, theme.error)
+                } else {
+                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
+                },
+                StatusButtonType::Solo => if active {
+                    (theme.warning, theme.deep_blue, theme.warning)
+                } else {
+                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
+                },
+                StatusButtonType::Record => if active {
+                    (theme.error, theme.text_primary, theme.error)
+                } else {
+                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
+                },
+                StatusButtonType::Active => if active {
+                    (theme.green_primary, theme.deep_blue, theme.green_primary)
+                } else {
+                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
+                },
+            };
+            
+            // Enhance colors on hover
+            let final_bg = if response.hovered() && !active {
+                egui::Color32::from_rgba_premultiplied(bg_color.r(), bg_color.g(), bg_color.b(), 150)
+            } else {
+                bg_color
+            };
+            
+            ui.painter().rect(
+                rect,
+                egui::Rounding::same(8.0),
+                final_bg,
+                egui::Stroke::new(1.5, border_color),
+            );
+            
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::proportional(11.0),
+                text_color,
+            );
+        }
+        
+        response
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum StatusButtonType {
+    Mute,
+    Solo,
+    Record,
+    Active,
+}
+
+// Enhanced glow button with consistent theming
+pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: GlowButtonStyle) -> impl egui::Widget + 'a {
+    move |ui: &mut egui::Ui| {
+        let desired_size = egui::vec2(ui.available_width().min(140.0), 32.0);
+        let response = ui.allocate_response(desired_size, egui::Sense::click());
+        let rect = response.rect;
+        
+        if ui.is_rect_visible(rect) {
+            let (base_color, glow_color) = match style {
+                GlowButtonStyle::Primary => (theme.green_primary, theme.green_glow),
+                GlowButtonStyle::Secondary => (theme.info, theme.light_blue),
+                GlowButtonStyle::Success => (theme.success, theme.green_glow),
+                GlowButtonStyle::Warning => (theme.warning, egui::Color32::from_rgb(251, 146, 60)),
+                GlowButtonStyle::Danger => (theme.error, egui::Color32::from_rgb(220, 38, 38)),
+            };
+            
+            let animation_progress = if response.hovered() { 1.0 } else { 0.6 };
+            
+            // Outer glow effect
+            if response.hovered() {
+                for i in 0..3 {
+                    let alpha = 30 - (i * 10);
+                    let glow_expand = (i + 1) as f32 * 2.0;
+                    ui.painter().rect(
+                        rect.expand(glow_expand),
+                        egui::Rounding::same(14.0 + glow_expand),
+                        egui::Color32::from_rgba_premultiplied(glow_color.r(), glow_color.g(), glow_color.b(), alpha),
+                        egui::Stroke::NONE,
+                    );
+                }
+            }
+            
+            // Main button
+            let button_color = if response.is_pointer_button_down_on() {
+                egui::Color32::from_rgba_premultiplied(
+                    (base_color.r() as f32 * 0.8) as u8,
+                    (base_color.g() as f32 * 0.8) as u8,
+                    (base_color.b() as f32 * 0.8) as u8,
+                    base_color.a(),
+                )
+            } else {
+                egui::Color32::from_rgba_premultiplied(
+                    base_color.r(),
+                    base_color.g(),
+                    base_color.b(),
+                    (255.0 * animation_progress) as u8,
+                )
+            };
+            
+            ui.painter().rect(
+                rect,
+                egui::Rounding::same(10.0),
+                button_color,
+                egui::Stroke::new(1.5, glow_color),
+            );
+            
+            // Text with proper contrast
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::proportional(13.0),
+                theme.deep_blue,
+            );
+        }
+        
+        response
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum GlowButtonStyle {
+    Primary,
+    Secondary,
+    Success,
+    Warning,
+    Danger,
 }

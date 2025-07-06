@@ -1,0 +1,25 @@
+pkgbase = phantomlink-git
+	pkgdesc = Professional Audio Mixer for Linux with RTX Voice-like noise suppression
+	pkgver = 0.2.0.r0.gce731f3
+	pkgrel = 1
+	url = https://github.com/ghostkellz/phantomlink
+	arch = x86_64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = git
+	makedepends = pkgconf
+	makedepends = alsa-lib
+	depends = alsa-lib
+	depends = gcc-libs
+	depends = glibc
+	optdepends = jack2: JACK audio server support
+	optdepends = pipewire-jack: PipeWire JACK compatibility
+	optdepends = vst-plugins: Additional VST plugin support
+	optdepends = focusrite-scarlett-solo: Hardware support for Scarlett Solo
+	provides = phantomlink
+	conflicts = phantomlink
+	source = git+https://github.com/ghostkellz/phantomlink.git
+	sha256sums = SKIP
+
+pkgname = phantomlink-git

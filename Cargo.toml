@@ -20,3 +20,9 @@ realfft = "3.3"
 num-complex = "0.4"
 rand = "0.8"
 glam = "0.24"
+log = "0.4"
+
+# Advanced AI denoising dependencies (optional for future use)
+# candle-core = { version = "0.9", optional = true }
+# candle-onnx = { version = "0.9", optional = true }
+# tflitec = { version = "0.6", optional = true }

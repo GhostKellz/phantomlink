@@ -181,14 +181,14 @@ impl ModernChannelStrip {
                 
                 // Control buttons - Modern status toggles
                 ui.horizontal(|ui| {
-                    if ui.add(status_toggle_button("MUTE", self.muted, theme, StatusButtonType::Mute)).clicked() {
+                    if ui.add(status_toggle_button("🔇 MUTE", self.muted, theme, StatusButtonType::Mute)).clicked() {
                         self.muted = !self.muted;
                         response.mute_changed = true;
                     }
                     
                     ui.add_space(4.0);
                     
-                    if ui.add(status_toggle_button("SOLO", self.solo, theme, StatusButtonType::Solo)).clicked() {
+                    if ui.add(status_toggle_button("🎯 SOLO", self.solo, theme, StatusButtonType::Solo)).clicked() {
                         self.solo = !self.solo;
                         response.solo_changed = true;
                     }
@@ -239,7 +239,7 @@ impl ModernChannelStrip {
             let peak_height = meter_rect.height() * peak_norm;
             let rms_height = meter_rect.height() * rms_norm;
             
-            // RMS level (background)
+            // RMS level (background) with gradient effect
             if rms_norm > 0.0 {
                 let rms_rect = egui::Rect::from_min_size(
                     egui::pos2(meter_rect.left(), meter_rect.bottom() - rms_height),
@@ -254,10 +254,27 @@ impl ModernChannelStrip {
                     theme.vu_meter_green()
                 };
                 
-                painter.rect_filled(rms_rect, egui::Rounding::same(2.0), rms_color);
+                // Create gradient effect by drawing multiple segments
+                let segments = 10;
+                for i in 0..segments {
+                    let segment_height = rms_height / segments as f32;
+                    let segment_y = rms_rect.bottom() - (i + 1) as f32 * segment_height;
+                    let alpha = (255.0 * (0.4 + 0.6 * (i as f32 / segments as f32))) as u8;
+                    
+                    let segment_rect = egui::Rect::from_min_size(
+                        egui::pos2(rms_rect.left(), segment_y),
+                        egui::vec2(rms_rect.width(), segment_height),
+                    );
+                    
+                    painter.rect_filled(
+                        segment_rect, 
+                        egui::Rounding::same(1.0), 
+                        egui::Color32::from_rgba_premultiplied(rms_color.r(), rms_color.g(), rms_color.b(), alpha)
+                    );
+                }
             }
             
-            // Peak level (foreground)
+            // Peak level (foreground) with smooth gradient
             if peak_norm > 0.0 {
                 let peak_rect = egui::Rect::from_min_size(
                     egui::pos2(meter_rect.right() - meter_rect.width() * 0.3, meter_rect.bottom() - peak_height),
@@ -272,7 +289,22 @@ impl ModernChannelStrip {
                     theme.vu_meter_green()
                 };
                 
+                // Add subtle glow effect for better visibility
+                painter.rect_filled(
+                    peak_rect.expand(1.0), 
+                    egui::Rounding::same(3.0), 
+                    egui::Color32::from_rgba_premultiplied(peak_color.r(), peak_color.g(), peak_color.b(), 40)
+                );
                 painter.rect_filled(peak_rect, egui::Rounding::same(2.0), peak_color);
+                
+                // Peak hold indicator
+                if peak_norm > 0.9 {
+                    let peak_line_y = meter_rect.bottom() - peak_height;
+                    painter.line_segment(
+                        [egui::pos2(meter_rect.left(), peak_line_y), egui::pos2(meter_rect.right(), peak_line_y)],
+                        egui::Stroke::new(2.0, theme.vu_meter_red())
+                    );
+                }
             }
             
             // dB scale markers
@@ -325,11 +357,22 @@ impl ModernButton {
         ).min_size(egui::vec2(100.0, 38.0))  // Larger touch target
     }
     
-    pub fn icon_button(icon: &str, text: &str) -> egui::Button<'static> {
+    pub fn icon_button<'a>(icon: &'a str, text: &'a str) -> egui::Button<'a> {
         egui::Button::new(
             egui::RichText::new(format!("{} {}", icon, text))
                 .size(15.0)  // Larger text
         ).min_size(egui::vec2(120.0, 40.0))  // Larger touch target
+    }
+    
+    pub fn animated_button(text: &str, hovered: bool) -> egui::Button {
+        let size = if hovered { 16.5 } else { 16.0 };
+        let width = if hovered { 145.0 } else { 140.0 };
+        let height = if hovered { 46.0 } else { 44.0 };
+        egui::Button::new(
+            egui::RichText::new(text)
+                .size(size)
+                .strong()
+        ).min_size(egui::vec2(width, height))
     }
 }
 

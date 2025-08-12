@@ -216,6 +216,33 @@ impl WavelinkTheme {
             a,
         )
     }
+    
+    // Animation support methods
+    pub fn animate_color(&self, from: egui::Color32, to: egui::Color32, progress: f32) -> egui::Color32 {
+        let progress = progress.clamp(0.0, 1.0);
+        let [fr, fg, fb, fa] = from.to_array();
+        let [tr, tg, tb, ta] = to.to_array();
+        
+        egui::Color32::from_rgba_premultiplied(
+            (fr as f32 + (tr as f32 - fr as f32) * progress) as u8,
+            (fg as f32 + (tg as f32 - fg as f32) * progress) as u8,
+            (fb as f32 + (tb as f32 - fb as f32) * progress) as u8,
+            (fa as f32 + (ta as f32 - fa as f32) * progress) as u8,
+        )
+    }
+    
+    pub fn pulse_color(&self, base_color: egui::Color32, time: f32) -> egui::Color32 {
+        let pulse = (time * 3.0).sin() * 0.5 + 0.5; // 0.0 to 1.0 oscillation
+        let [r, g, b, a] = base_color.to_array();
+        let intensity = 0.8 + pulse * 0.4; // 0.8 to 1.2 intensity
+        
+        egui::Color32::from_rgba_premultiplied(
+            ((r as f32 * intensity).min(255.0)) as u8,
+            ((g as f32 * intensity).min(255.0)) as u8,
+            ((b as f32 * intensity).min(255.0)) as u8,
+            a,
+        )
+    }
 }
 
 // Legacy alias for backwards compatibility

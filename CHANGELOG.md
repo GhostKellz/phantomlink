@@ -5,6 +5,101 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-08-12
+
+### 🎯 Major Feature Release - "True Wavelink Alternative"
+
+#### Added
+- **Real-time Application Audio Routing**
+  - Complete application audio capture and routing system
+  - PulseAudio integration for per-application volume control
+  - Route Discord to headphones only, games to both headphones + stream
+  - Automatic application detection with user-friendly names and icons
+  - Real-time application volume and mute controls
+
+- **Functional Audio Engine Integration**
+  - Connected GUI controls to actual audio processing pipeline
+  - Real-time VU meter updates from actual audio levels
+  - Channel volume, gain, pan, and mute controls now affect audio
+  - Live spectrum analyzer displaying actual audio frequency data
+  - Proper audio buffering and low-latency processing
+
+- **JACK Audio Server Support**
+  - Professional low-latency audio routing via JACK
+  - Automatic fallback to ALSA when JACK unavailable
+  - Dedicated input/output ports for professional audio workflows
+  - Real-time audio processing with minimal latency
+
+- **VST Plugin System**
+  - Full VST plugin loading and processing integration
+  - Real-time audio effects processing in audio pipeline
+  - Per-channel VST plugin assignment and control
+  - Automatic VST plugin scanning and management
+  - Error handling for failed plugin loads
+
+- **Hardware Integration**
+  - Complete Focusrite Scarlett Solo integration
+  - Real hardware gain control via ALSA mixer
+  - Direct monitor toggle functionality
+  - Hardware status feedback and error reporting
+
+- **Professional Installation System**
+  - Automated installation script with dependency checking
+  - Desktop integration with application launcher
+  - System PATH integration for command-line access
+  - Comprehensive setup instructions and quick start guide
+
+#### Enhanced
+- **Audio Processing Pipeline**
+  - Connected advanced denoising system to real audio flow
+  - Multi-channel audio processing with proper gain staging
+  - Stereo panning and volume control implementation
+  - Real-time audio level monitoring and peak detection
+
+- **User Interface Improvements**
+  - Real-time status updates and error reporting
+  - Enhanced error messages with dismissible UI elements
+  - Application routing controls with intuitive output selection
+  - Professional audio control tooltips and help text
+
+- **Performance & Reliability**
+  - Robust error handling throughout audio pipeline
+  - Automatic audio device detection and configuration
+  - Memory-efficient audio processing and buffering
+  - Thread-safe audio routing and processing
+
+#### Technical Implementation
+- **Application Audio Router** (`app_audio.rs`)
+  - PulseAudio sink input management
+  - Process detection and audio stream association
+  - Background threading for real-time audio routing
+  - Cross-platform application detection
+
+- **Audio Engine Enhancements**
+  - Connected channel processors to GUI controls
+  - Real-time level metering and spectrum analysis
+  - VST processor integration and management
+  - Hardware control abstraction layer
+
+- **Professional Audio Features**
+  - JACK client implementation for professional workflows
+  - Low-latency audio processing (<20ms target)
+  - Multi-device audio routing capabilities
+  - Professional-grade error handling and status reporting
+
+#### Ready for Daily Use
+PhantomLink v0.3.0 is now a **functional Wavelink alternative** capable of:
+- ✅ Routing Discord audio to headphones only
+- ✅ Sending game audio to both headphones and stream
+- ✅ Real-time noise suppression on microphone input
+- ✅ Hardware control of Scarlett Solo interface
+- ✅ VST plugin effects processing
+- ✅ Professional spectrum analysis and level monitoring
+
+This release transforms PhantomLink from a GUI prototype into a production-ready professional audio mixer for Linux.
+
+---
+
 ## [0.2.0] - 2025-07-06
 
 ### Major GUI Redesign & Modernization

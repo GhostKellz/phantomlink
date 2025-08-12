@@ -31,13 +31,13 @@ impl Default for MixerPanel {
     fn default() -> Self {
         let mut outputs = vec![
             MixerOutput {
-                name: "Monitor Mix".to_string(),
+                name: "🎧 Monitor Mix".to_string(),
                 enabled: true,
                 volume: 0.8,
                 channels: HashMap::new(),
             },
             MixerOutput {
-                name: "Stream Mix".to_string(),
+                name: "📺 Stream Mix".to_string(),
                 enabled: true,
                 volume: 0.8,
                 channels: HashMap::new(),
@@ -115,7 +115,7 @@ impl MixerPanel {
                 egui::Color32::from_rgb(100, 100, 100)
             };
             
-            if ui.add(widgets::glow_button("MONITOR", monitor_color)).clicked() {
+            if ui.add(widgets::glow_button("🎧 MONITOR", monitor_color)).clicked() {
                 self.mode = MixerMode::MonitorMix;
                 self.selected_output = 0;
             }
@@ -126,7 +126,7 @@ impl MixerPanel {
                 egui::Color32::from_rgb(100, 100, 100)
             };
             
-            if ui.add(widgets::glow_button("STREAM", stream_color)).clicked() {
+            if ui.add(widgets::glow_button("📺 STREAM", stream_color)).clicked() {
                 self.mode = MixerMode::StreamMix;
                 self.selected_output = 1;
             }
@@ -137,7 +137,7 @@ impl MixerPanel {
                 egui::Color32::from_rgb(100, 100, 100)
             };
             
-            if ui.add(widgets::glow_button("RECORD", rec_color)).clicked() {
+            if ui.add(widgets::glow_button("🔴 RECORD", rec_color)).clicked() {
                 self.mode = MixerMode::Recording;
                 self.selected_output = 3;
             }

@@ -7,6 +7,7 @@ mod config;
 mod jack_client;
 mod vst_host;
 mod advanced_denoising;
+mod app_audio;
 
 use eframe::egui;
 

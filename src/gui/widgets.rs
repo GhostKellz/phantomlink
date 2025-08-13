@@ -379,6 +379,24 @@ impl ModernButton {
 pub struct StatusIndicator;
 
 impl StatusIndicator {
+    pub fn new(status: &str, color: egui::Color32) -> impl egui::Widget + '_ {
+        move |ui: &mut egui::Ui| {
+            let response = ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("●")
+                        .size(18.0)
+                        .color(color)
+                );
+                ui.label(
+                    egui::RichText::new(status)
+                        .size(14.0)
+                        .color(color)
+                );
+            });
+            response.response
+        }
+    }
+    
     pub fn show(ui: &mut egui::Ui, theme: &WavelinkTheme, status: &str, is_active: bool) {
         let color = if is_active { theme.green_primary } else { theme.error };  // Use green instead of success
         let icon = if is_active { "●" } else { "●" };

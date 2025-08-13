@@ -8,10 +8,16 @@ mod jack_client;
 mod vst_host;
 mod advanced_denoising;
 mod app_audio;
+mod ghostnv_mock;
+mod ghostnv;
+mod ghostnv_bridge;
 
 use eframe::egui;
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    // Initialize tracing for GHOSTNV
+    tracing_subscriber::fmt::init();
     // Enable high DPI support and modern GUI features
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

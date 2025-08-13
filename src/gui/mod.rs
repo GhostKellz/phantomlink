@@ -45,6 +45,10 @@ pub struct PhantomlinkApp {
     current_denoising_mode: DenoisingMode,
     advanced_denoising_enabled: bool,
     show_denoising_metrics: bool,
+    // GHOSTNV state
+    ghostnv_available: bool,
+    ghostnv_enabled: bool,
+    ghostnv_initialized: bool,
     // GUI Panels
     application_manager: ApplicationManager,
     mixer_panel: MixerPanel,
@@ -80,6 +84,9 @@ impl Default for PhantomlinkApp {
             current_denoising_mode: DenoisingMode::Enhanced,
             advanced_denoising_enabled: true,
             show_denoising_metrics: false,
+            ghostnv_available: false,
+            ghostnv_enabled: false,
+            ghostnv_initialized: false,
             application_manager: ApplicationManager::default(),
             mixer_panel: MixerPanel::default(),
             spectrum_analyzer: SpectrumAnalyzer::new(48000.0),
@@ -515,6 +522,129 @@ impl PhantomlinkApp {
                             .size(12.0)
                             .color(self.theme.text_muted)
                     );
+                });
+            
+            ui.add_space(20.0);
+            
+            // GHOSTNV RTX Voice Controls
+            egui::Frame::none()
+                .fill(self.theme.translucent_input_bg())
+                .stroke(egui::Stroke::new(1.0, self.theme.green_primary))
+                .rounding(egui::Rounding::same(12.0))
+                .inner_margin(egui::Margin::same(16.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(400.0);
+                    
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("🎮 GHOSTNV RTX Voice")
+                                .size(18.0)
+                                .strong()
+                                .color(self.theme.green_primary)
+                        );
+                        
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Status indicator
+                            let status_color = if self.ghostnv_available && self.ghostnv_enabled {
+                                self.theme.green_primary
+                            } else if self.ghostnv_available {
+                                self.theme.warning
+                            } else {
+                                self.theme.error
+                            };
+                            
+                            ui.add(StatusIndicator::new(
+                                if self.ghostnv_available && self.ghostnv_enabled { "ACTIVE" } else if self.ghostnv_available { "READY" } else { "UNAVAILABLE" },
+                                status_color
+                            ));
+                        });
+                    });
+                    
+                    ui.add_space(16.0);
+                    
+                    // Initialize GHOSTNV button
+                    if !self.ghostnv_initialized {
+                        if ui.add(enhanced_glow_button("🚀 Initialize GHOSTNV", &self.theme, GlowButtonStyle::Success)).clicked() {
+                            // This would need to be handled async in the app update loop
+                            self.ghostnv_initialized = true;
+                            self.ghostnv_available = true; // Assume success for now
+                        }
+                        
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("Click to initialize NVIDIA RTX Voice processing")
+                                .size(12.0)
+                                .color(self.theme.text_muted)
+                        );
+                    } else {
+                        // Enable/Disable toggle
+                        let mut ghostnv_enabled = self.ghostnv_enabled;
+                        if ui.add(
+                            egui::Checkbox::new(&mut ghostnv_enabled, "Enable GHOSTNV RTX Voice")
+                        ).changed() {
+                            self.ghostnv_enabled = ghostnv_enabled;
+                            // This would trigger async call to audio engine
+                        }
+                        
+                        if self.ghostnv_available && self.ghostnv_enabled {
+                            ui.add_space(12.0);
+                            
+                            // Enhancement mode selection
+                            ui.label(
+                                egui::RichText::new("Enhancement Mode:")
+                                    .size(14.0)
+                                    .color(self.theme.text_primary)
+                            );
+                            
+                            ui.add_space(8.0);
+                            
+                            ui.horizontal(|ui| {
+                                let modes = [
+                                    ("Gaming", "Aggressive enhancement for competitive gaming"),
+                                    ("Streaming", "Balanced enhancement with music awareness"),
+                                    ("Studio", "Maximum quality for recording/production")
+                                ];
+                                
+                                for (mode, description) in &modes {
+                                    if ui.add(
+                                        egui::RadioButton::new(false, *mode) // TODO: track selected mode
+                                    ).on_hover_text(*description).clicked() {
+                                        // TODO: Apply enhancement mode
+                                    }
+                                }
+                            });
+                            
+                            ui.add_space(12.0);
+                            
+                            // Session management
+                            ui.label(
+                                egui::RichText::new("Active Sessions:")
+                                    .size(14.0)
+                                    .color(self.theme.text_primary)
+                            );
+                            
+                            ui.add_space(8.0);
+                            
+                            ui.horizontal(|ui| {
+                                if ui.add(enhanced_glow_button("➕ Create Session", &self.theme, GlowButtonStyle::Primary)).clicked() {
+                                    // TODO: Create new GHOSTNV session
+                                }
+                                
+                                ui.label(
+                                    egui::RichText::new("User sessions: 0") // TODO: show actual count
+                                        .size(12.0)
+                                        .color(self.theme.text_secondary)
+                                );
+                            });
+                        }
+                        
+                        ui.add_space(12.0);
+                        ui.label(
+                            egui::RichText::new("Professional RTX Voice with music-aware enhancement")
+                                .size(12.0)
+                                .color(self.theme.text_muted)
+                        );
+                    }
                 });
             
             ui.add_space(20.0);

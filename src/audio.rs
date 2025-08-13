@@ -9,6 +9,8 @@ use crate::advanced_denoising::{
     AdvancedDenoisingSystem, AdvancedDenoisingConfig, DenoisingMode, 
     AdvancedDenoiser, SharedAdvancedDenoiser, create_advanced_denoiser
 };
+use crate::ghostnv::GhostNVProcessor;
+use crate::ghostnv_bridge::GhostNVBridge;
 use crossbeam_channel::{Receiver, Sender};
 use std::time::Instant;
 use anyhow::Result;
@@ -96,6 +98,118 @@ impl ChannelProcessor {
         (stereo_output, levels)
     }
     
+    // New method for processing with GHOSTNV bridge (synchronous)
+    pub fn process_ghostnv_sync(&mut self, input: &[f32], ghostnv_bridge: Option<&GhostNVBridge>, user_id: u32, dt: f32) -> (Vec<f32>, [f32; 2]) {
+        if self.muted {
+            return (vec![0.0; input.len()], [0.0, 0.0]);
+        }
+
+        let mut output = input.to_vec();
+        
+        // Apply gain
+        let gain_linear = if self.gain >= 0.0 {
+            1.0 + self.gain / 20.0
+        } else {
+            10.0_f32.powf(self.gain / 20.0)
+        };
+        
+        for sample in &mut output {
+            *sample *= gain_linear;
+        }
+        
+        // Apply GHOSTNV RTX Voice processing if available
+        if let Some(bridge) = ghostnv_bridge {
+            if let Some(processed) = bridge.process_audio_sync(user_id, output.clone()) {
+                output = processed;
+            }
+        }
+        
+        // Apply VST processing
+        if let Some(ref mut vst) = self.vst_processor {
+            output = vst.process(&output);
+        }
+        
+        // Apply volume
+        for sample in &mut output {
+            *sample *= self.volume;
+        }
+        
+        // Apply panning (assuming stereo output)
+        let mut stereo_output = Vec::with_capacity(output.len() * 2);
+        for &sample in &output {
+            let left_gain = if self.pan <= 0.0 { 1.0 } else { 1.0 - self.pan };
+            let right_gain = if self.pan >= 0.0 { 1.0 } else { 1.0 + self.pan };
+            
+            stereo_output.push(sample * left_gain);
+            stereo_output.push(sample * right_gain);
+        }
+        
+        // Update VU meter and get levels
+        let (peak, rms) = self.vu_meter.process(&stereo_output, dt);
+        let levels = [peak, rms];
+        
+        // Store levels for GUI access
+        self.last_levels = levels;
+        
+        (stereo_output, levels)
+    }
+
+    // New method for processing with GHOSTNV
+    pub async fn process_ghostnv(&mut self, input: &[f32], ghostnv: Option<&GhostNVProcessor>, user_id: u32, dt: f32) -> (Vec<f32>, [f32; 2]) {
+        if self.muted {
+            return (vec![0.0; input.len()], [0.0, 0.0]);
+        }
+
+        let mut output = input.to_vec();
+        
+        // Apply gain
+        let gain_linear = if self.gain >= 0.0 {
+            1.0 + self.gain / 20.0
+        } else {
+            10.0_f32.powf(self.gain / 20.0)
+        };
+        
+        for sample in &mut output {
+            *sample *= gain_linear;
+        }
+        
+        // Apply GHOSTNV RTX Voice processing if available
+        if let Some(processor) = ghostnv {
+            if let Ok((processed, _stats)) = processor.process_audio(user_id, &output, None).await {
+                output = processed;
+            }
+        }
+        
+        // Apply VST processing
+        if let Some(ref mut vst) = self.vst_processor {
+            output = vst.process(&output);
+        }
+        
+        // Apply volume
+        for sample in &mut output {
+            *sample *= self.volume;
+        }
+        
+        // Apply panning (assuming stereo output)
+        let mut stereo_output = Vec::with_capacity(output.len() * 2);
+        for &sample in &output {
+            let left_gain = if self.pan <= 0.0 { 1.0 } else { 1.0 - self.pan };
+            let right_gain = if self.pan >= 0.0 { 1.0 } else { 1.0 + self.pan };
+            
+            stereo_output.push(sample * left_gain);
+            stereo_output.push(sample * right_gain);
+        }
+        
+        // Update VU meter and get levels
+        let (peak, rms) = self.vu_meter.process(&stereo_output, dt);
+        let levels = [peak, rms];
+        
+        // Store levels for GUI access
+        self.last_levels = levels;
+        
+        (stereo_output, levels)
+    }
+
     // New method for processing with advanced denoiser
     pub fn process_advanced(&mut self, input: &[f32], advanced_denoiser: Option<&SharedAdvancedDenoiser>, dt: f32) -> (Vec<f32>, [f32; 2]) {
         if self.muted {
@@ -163,6 +277,7 @@ pub struct AudioEngine {
     channels: Arc<Mutex<Vec<ChannelProcessor>>>,
     rnnoise: Arc<Mutex<Rnnoise>>, // Keep for backward compatibility
     advanced_denoiser: Option<SharedAdvancedDenoiser>,
+    ghostnv_bridge: Option<GhostNVBridge>,
     spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>>,
     spectrum_data: Arc<Mutex<Vec<f32>>>,
     audio_sender: Option<Sender<Vec<f32>>>,
@@ -202,6 +317,7 @@ impl AudioEngine {
             channels,
             rnnoise,
             advanced_denoiser,
+            ghostnv_bridge: None, // Will be initialized async
             spectrum_analyzer,
             spectrum_data,
             audio_sender: Some(audio_sender),
@@ -287,6 +403,47 @@ impl AudioEngine {
         vec![DenoisingMode::Basic] // Fallback to basic mode
     }
     
+    // GHOSTNV methods
+    pub async fn initialize_ghostnv(&mut self) -> Result<()> {
+        let bridge = GhostNVBridge::new();
+        match bridge.initialize().await {
+            Ok(()) => {
+                self.ghostnv_bridge = Some(bridge);
+                println!("🎮 GHOSTNV RTX Voice initialized successfully!");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Failed to initialize GHOSTNV: {}", e);
+                Err(e)
+            }
+        }
+    }
+    
+    pub async fn create_ghostnv_session(&self, user_id: u32, enhancement_mode: crate::ghostnv_mock::EnhancementMode) -> Result<()> {
+        if let Some(ref bridge) = self.ghostnv_bridge {
+            bridge.create_session(user_id, enhancement_mode).await?;
+        }
+        Ok(())
+    }
+    
+    pub async fn set_ghostnv_enabled(&self, enabled: bool) {
+        if let Some(ref bridge) = self.ghostnv_bridge {
+            bridge.set_enabled(enabled).await;
+        }
+    }
+    
+    pub async fn is_ghostnv_enabled(&self) -> bool {
+        if let Some(ref bridge) = self.ghostnv_bridge {
+            bridge.is_enabled().await
+        } else {
+            false
+        }
+    }
+    
+    pub fn is_ghostnv_available(&self) -> bool {
+        self.ghostnv_bridge.is_some()
+    }
+    
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let input_device = host.default_input_device().ok_or("No input device available")?;
@@ -307,6 +464,7 @@ impl AudioEngine {
         let channels = Arc::clone(&self.channels);
         let rnnoise = Arc::clone(&self.rnnoise);
         let advanced_denoiser = self.advanced_denoiser.clone();
+        let ghostnv_available = self.ghostnv_bridge.is_some();
         let spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>> = Arc::clone(&self.spectrum_analyzer);
         let spectrum_data: Arc<Mutex<Vec<f32>>> = Arc::clone(&self.spectrum_data);
         
@@ -323,11 +481,18 @@ impl AudioEngine {
                 let mut total_levels = [0.0f32; 2];
                 
                 if let Ok(mut channels) = channels.lock() {
-                    for channel in channels.iter_mut() {
-                        // Use advanced denoiser if available, otherwise fall back to legacy RNNoise
-                        let (processed, levels) = if advanced_denoiser.is_some() {
+                    for (channel_idx, channel) in channels.iter_mut().enumerate() {
+                        // Choose processing method based on available systems
+                        let (processed, levels) = if ghostnv_available {
+                            // GHOSTNV processing (highest priority)
+                            // For now, fall back to advanced denoiser since we need async bridge
+                            // TODO: Implement GHOSTNV processing via async bridge
+                            channel.process_advanced(data, advanced_denoiser.as_ref(), 0.02)
+                        } else if advanced_denoiser.is_some() {
+                            // Advanced denoiser
                             channel.process_advanced(data, advanced_denoiser.as_ref(), 0.02)
                         } else if let Ok(rnnoise) = rnnoise.lock() {
+                            // Legacy RNNoise
                             channel.process(data, &rnnoise, 0.02)
                         } else {
                             // Fallback: process without denoising

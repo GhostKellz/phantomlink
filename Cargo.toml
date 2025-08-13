@@ -26,3 +26,9 @@ log = "0.4"
 # candle-core = { version = "0.9", optional = true }
 # candle-onnx = { version = "0.9", optional = true }
 # tflitec = { version = "0.6", optional = true }
+
+# GHOSTNV RTX Voice integration (using mock until real FFI is complete)
+# ghostnv-rtx-voice = { path = "../ghostnv/phantomlink-ffi", features = ["multi-user", "music-analysis"] }
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

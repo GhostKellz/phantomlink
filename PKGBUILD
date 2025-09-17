@@ -1,22 +1,20 @@
 # Maintainer: Christopher Kelley <ckelley@ghostkellz.sh>
-# Contributor: CK Technology LLC <ckelley@ghostkellz.sh>
+# Contributor: CK Technology <ckelley@ghostkellz.sh>
 
 pkgname=phantomlink-git
-pkgver=0.3.0.r0.g$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+pkgver=0.2.0.r0.g$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 pkgrel=1
-pkgdesc="Professional Audio Mixer for Linux - True Wavelink Alternative with Application Routing"
+pkgdesc="Professional Audio Mixer for Linux with RTX Voice-like noise suppression"
 arch=('x86_64')
 url="https://github.com/ghostkellz/phantomlink"
 license=('MIT')
-depends=('alsa-lib' 'gcc-libs' 'glibc' 'pulseaudio')
+depends=('alsa-lib' 'gcc-libs' 'glibc')
 makedepends=('rust' 'cargo' 'git' 'pkgconf' 'alsa-lib')
 optdepends=(
-    'jack2: JACK audio server support for low-latency professional audio'
-    'pipewire-jack: PipeWire JACK compatibility layer'
-    'pipewire-pulse: PipeWire PulseAudio compatibility for application routing'
+    'jack2: JACK audio server support'
+    'pipewire-jack: PipeWire JACK compatibility'
     'vst-plugins: Additional VST plugin support'
-    'ladspa-plugins: LADSPA plugin support'
-    'focusrite-scarlett-solo: Hardware support for Scarlett Solo interface'
+    'focusrite-scarlett-solo: Hardware support for Scarlett Solo'
 )
 provides=('phantomlink')
 conflicts=('phantomlink')
@@ -25,7 +23,7 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/phantomlink"
-    printf "0.3.0.r%s.g%s" \
+    printf "0.2.0.r%s.g%s" \
         "$(git rev-list --count HEAD)" \
         "$(git rev-parse --short HEAD)"
 }

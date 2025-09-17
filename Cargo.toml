@@ -1,6 +1,6 @@
 [package]
 name = "phantomlink"
-version = "0.3.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
@@ -22,13 +22,15 @@ rand = "0.8"
 glam = "0.24"
 log = "0.4"
 
+# Ghostwave integration for RTX noise suppression
+# Note: Currently has build issues, integrating as optional feature
+# ghostwave-core = { git = "https://github.com/ghostkellz/ghostwave", features = ["pipewire-backend", "alsa-backend"], optional = true }
+
+[features]
+default = []
+ghostwave = []  # Feature flag for Ghostwave integration when it's ready
+
 # Advanced AI denoising dependencies (optional for future use)
 # candle-core = { version = "0.9", optional = true }
 # candle-onnx = { version = "0.9", optional = true }
 # tflitec = { version = "0.6", optional = true }
-
-# GHOSTNV RTX Voice integration (using mock until real FFI is complete)
-# ghostnv-rtx-voice = { path = "../ghostnv/phantomlink-ffi", features = ["multi-user", "music-analysis"] }
-tokio = { version = "1.0", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

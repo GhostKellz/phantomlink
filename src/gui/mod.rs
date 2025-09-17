@@ -4,6 +4,8 @@ pub mod visualizer;
 pub mod mixer;
 pub mod applications;
 pub mod waveform;
+pub mod production_enhancements;
+mod enhanced_methods;
 
 use eframe::egui;
 use crate::phantomlink;
@@ -15,13 +17,30 @@ use crate::gui::applications::ApplicationManager;
 use crate::gui::mixer::MixerPanel;
 use crate::gui::visualizer::SpectrumAnalyzer;
 use crate::advanced_denoising::{DenoisingMode, DenoisingMetrics};
-use crate::app_audio::{ApplicationAudioRouter, AudioApplication, OutputRouting};
+use crate::ghostwave_integration::PhantomLinkProfile;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MainTab {
     Mixer,
     Applications,
     Advanced,
+    Settings,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotificationMessage {
+    pub text: String,
+    pub level: NotificationLevel,
+    pub timestamp: std::time::Instant,
+    pub duration: std::time::Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NotificationLevel {
+    Info,
+    Warning,
+    Error,
+    Success,
 }
 
 impl Default for MainTab {
@@ -45,18 +64,21 @@ pub struct PhantomlinkApp {
     current_denoising_mode: DenoisingMode,
     advanced_denoising_enabled: bool,
     show_denoising_metrics: bool,
-    // GHOSTNV state
-    ghostnv_available: bool,
-    ghostnv_enabled: bool,
-    ghostnv_initialized: bool,
     // GUI Panels
     application_manager: ApplicationManager,
     mixer_panel: MixerPanel,
     spectrum_analyzer: SpectrumAnalyzer,
-    // Application audio routing
-    app_audio_router: ApplicationAudioRouter,
     // Tab state
     active_tab: MainTab,
+    // Production-ready features
+    keyboard_shortcuts_enabled: bool,
+    notifications: Vec<NotificationMessage>,
+    show_help_overlay: bool,
+    auto_save_enabled: bool,
+    last_save_time: std::time::Instant,
+    master_volume: f32,
+    mute_all: bool,
+    solo_any: bool,
 }
 
 impl Default for PhantomlinkApp {
@@ -64,7 +86,7 @@ impl Default for PhantomlinkApp {
         let scarlett = ScarlettSolo::new().ok();
         let vst_plugins = phantomlink::find_vst_plugins();
         let vst_plugin_info = phantomlink::scan_vst_plugins().unwrap_or_default();
-        
+
         Self {
             vst_plugins,
             vst_plugin_info,
@@ -84,14 +106,18 @@ impl Default for PhantomlinkApp {
             current_denoising_mode: DenoisingMode::Enhanced,
             advanced_denoising_enabled: true,
             show_denoising_metrics: false,
-            ghostnv_available: false,
-            ghostnv_enabled: false,
-            ghostnv_initialized: false,
             application_manager: ApplicationManager::default(),
             mixer_panel: MixerPanel::default(),
             spectrum_analyzer: SpectrumAnalyzer::new(48000.0),
-            app_audio_router: ApplicationAudioRouter::new(),
             active_tab: MainTab::default(),
+            keyboard_shortcuts_enabled: true,
+            notifications: Vec::new(),
+            show_help_overlay: false,
+            auto_save_enabled: true,
+            last_save_time: std::time::Instant::now(),
+            master_volume: 0.8,
+            mute_all: false,
+            solo_any: false,
         }
     }
 }
@@ -100,17 +126,31 @@ impl eframe::App for PhantomlinkApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Apply the new Wavelink theme with green accents and translucency
         self.theme.apply(ctx);
-        
+
+        // Handle keyboard shortcuts
+        self.handle_keyboard_shortcuts(ctx);
+
+        // Auto-save functionality
+        self.handle_auto_save();
+
+        // Update notifications
+        self.update_notifications();
+
+        // Show help overlay if enabled
+        if self.show_help_overlay {
+            self.draw_help_overlay(ctx);
+        }
+
         // Main background with translucency
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(self.theme.translucent_deep_bg()))
             .show(ctx, |ui| {
                 self.draw_header(ui);
                 ui.add_space(12.0);
-                
+
                 self.draw_navigation_tabs(ui);
                 ui.add_space(12.0);
-                
+
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
@@ -126,9 +166,18 @@ impl eframe::App for PhantomlinkApp {
                             MainTab::Advanced => {
                                 self.draw_advanced_panel(ui);
                             }
+                            MainTab::Settings => {
+                                self.draw_settings_panel(ui);
+                            }
                         }
                     });
+
+                // Draw floating notifications
+                self.draw_notifications(ui);
             });
+
+        // Request repaint for animations
+        ctx.request_repaint();
     }
 }
 
@@ -160,7 +209,7 @@ impl PhantomlinkApp {
                         // Transport controls - more touch-friendly
                         ui.horizontal(|ui| {
                             // Audio engine control with enhanced styling
-                            let button_text = if self.audio_started { "⏹️ STOP" } else { "▶️ START" };
+                            let button_text = if self.audio_started { "⏹ STOP" } else { "▶ START" };
                             let button_style = if self.audio_started { 
                                 GlowButtonStyle::Danger 
                             } else { 
@@ -198,35 +247,10 @@ impl PhantomlinkApp {
                     });
                 });
                 
-                // Enhanced error message display with better styling
-                if let Some(error) = self.error_message.clone() {
-                    ui.add_space(12.0);
-                    
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgba_premultiplied(248, 113, 113, 40))
-                        .stroke(egui::Stroke::new(2.0, self.theme.error))
-                        .rounding(egui::Rounding::same(10.0))
-                        .inner_margin(egui::Margin::same(16.0))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("⚠️")
-                                        .size(20.0)
-                                        .color(self.theme.error)
-                                );
-                                ui.label(
-                                    egui::RichText::new(&error)
-                                        .size(14.0)
-                                        .color(self.theme.text_primary)
-                                );
-                                
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.small_button("✕").clicked() {
-                                        self.error_message = None;
-                                    }
-                                });
-                            });
-                        });
+                // Error message display
+                if let Some(ref error) = self.error_message {
+                    ui.add_space(8.0);
+                    ui.colored_label(self.theme.error, format!("⚠ {}", error));
                 }
             });
     }
@@ -245,6 +269,7 @@ impl PhantomlinkApp {
                         (MainTab::Mixer, "🎛️ MIXER", "Audio mixing and channel controls"),
                         (MainTab::Applications, "🎮 APPLICATIONS", "Application audio management"),
                         (MainTab::Advanced, "⚡ ADVANCED", "Advanced features and settings"),
+                        (MainTab::Settings, "⚙️ SETTINGS", "Application settings and preferences"),
                     ];
                     
                     for (tab, label, tooltip) in &tabs {
@@ -259,20 +284,6 @@ impl PhantomlinkApp {
                             egui::Vec2::new(120.0, 40.0),
                             enhanced_glow_button(label, &self.theme, button_style)
                         );
-                        
-                        // Add hover animation effect
-                        if button_response.hovered() && !is_active {
-                            ui.painter().rect(
-                                button_response.rect.expand(3.0),
-                                egui::Rounding::same(12.0),
-                                egui::Color32::TRANSPARENT,
-                                egui::Stroke::new(2.0, self.theme.animate_color(
-                                    self.theme.medium_blue, 
-                                    self.theme.green_secondary, 
-                                    0.7
-                                ))
-                            );
-                        }
                         
                         if button_response.on_hover_text(*tooltip).clicked() {
                             self.active_tab = tab.clone();
@@ -289,142 +300,7 @@ impl PhantomlinkApp {
             .rounding(egui::Rounding::same(16.0))
             .inner_margin(egui::Margin::same(24.0))
             .show(ui, |ui| {
-                // Application audio routing panel
-                ui.label(
-                    egui::RichText::new("🎮 Application Audio Routing")
-                        .size(22.0)
-                        .strong()
-                        .color(self.theme.green_primary)
-                );
-                
-                ui.add_space(16.0);
-                
-                // Start monitoring button
-                ui.horizontal(|ui| {
-                    if ui.add(enhanced_glow_button("🔍 Scan Applications", &self.theme, GlowButtonStyle::Primary)).clicked() {
-                        if let Err(e) = self.app_audio_router.start_monitoring() {
-                            self.error_message = Some(format!("Failed to start audio monitoring: {}", e));
-                        } else {
-                            self.app_audio_router.refresh_applications();
-                        }
-                    }
-                    
-                    if ui.add(enhanced_glow_button("🔄 Refresh", &self.theme, GlowButtonStyle::Secondary)).clicked() {
-                        self.app_audio_router.refresh_applications();
-                    }
-                });
-                
-                ui.add_space(20.0);
-                
-                // Applications list
-                let applications = self.app_audio_router.get_applications();
-                
-                if applications.is_empty() {
-                    ui.label(
-                        egui::RichText::new("No audio applications detected. Click 'Scan Applications' to detect running applications.")
-                            .size(14.0)
-                            .color(self.theme.text_muted)
-                    );
-                } else {
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false; 2])
-                        .show(ui, |ui| {
-                            for app in &applications {
-                                self.draw_application_control(ui, app);
-                                ui.add_space(12.0);
-                            }
-                        });
-                }
-            });
-    }
-    
-    fn draw_application_control(&mut self, ui: &mut egui::Ui, app: &AudioApplication) {
-        egui::Frame::none()
-            .fill(self.theme.translucent_input_bg())
-            .stroke(egui::Stroke::new(1.0, self.theme.medium_blue))
-            .rounding(egui::Rounding::same(10.0))
-            .inner_margin(egui::Margin::same(16.0))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    // Application icon and name
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(&app.display_name)
-                                .size(16.0)
-                                .strong()
-                                .color(self.theme.text_primary)
-                        );
-                        ui.label(
-                            egui::RichText::new(format!("PID: {}", app.pid))
-                                .size(12.0)
-                                .color(self.theme.text_muted)
-                        );
-                    });
-                    
-                    ui.add_space(20.0);
-                    
-                    // Volume control
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Volume")
-                                .size(12.0)
-                                .color(self.theme.text_secondary)
-                        );
-                        
-                        let mut volume = app.volume;
-                        if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0)
-                            .show_value(true)
-                            .suffix("%")).changed() {
-                            self.app_audio_router.set_application_volume(&app.process_name, volume);
-                        }
-                    });
-                    
-                    ui.add_space(16.0);
-                    
-                    // Mute button
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Mute")
-                                .size(12.0)
-                                .color(self.theme.text_secondary)
-                        );
-                        
-                        let mute_text = if app.muted { "🔇 MUTED" } else { "🔊 ACTIVE" };
-                        let mute_style = if app.muted { GlowButtonStyle::Danger } else { GlowButtonStyle::Success };
-                        
-                        if ui.add(enhanced_glow_button(mute_text, &self.theme, mute_style)).clicked() {
-                            self.app_audio_router.set_application_mute(&app.process_name, !app.muted);
-                        }
-                    });
-                    
-                    ui.add_space(16.0);
-                    
-                    // Output routing
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Output Routing")
-                                .size(12.0)
-                                .color(self.theme.text_secondary)
-                        );
-                        
-                        let mut selected_routing = app.output_routing.clone();
-                        egui::ComboBox::from_id_source(format!("routing_{}", app.process_name))
-                            .selected_text(match app.output_routing {
-                                OutputRouting::Headphones => "🎧 Headphones Only",
-                                OutputRouting::Stream => "📺 Stream Only",
-                                OutputRouting::Both => "🎧📺 Both",
-                                OutputRouting::None => "🚫 None",
-                            })
-                            .show_ui(ui, |ui| {
-                                if ui.selectable_value(&mut selected_routing, OutputRouting::Headphones, "🎧 Headphones Only").clicked() ||
-                                   ui.selectable_value(&mut selected_routing, OutputRouting::Stream, "📺 Stream Only").clicked() ||
-                                   ui.selectable_value(&mut selected_routing, OutputRouting::Both, "🎧📺 Both").clicked() ||
-                                   ui.selectable_value(&mut selected_routing, OutputRouting::None, "🚫 None").clicked() {
-                                    self.app_audio_router.set_application_routing(&app.process_name, selected_routing);
-                                }
-                            });
-                    });
-                });
+                self.application_manager.render(ui);
             });
     }
     
@@ -441,7 +317,7 @@ impl PhantomlinkApp {
                     
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("🔇 Advanced Noise Suppression")
+                            egui::RichText::new("🔇 RTX Noise Suppression (Ghostwave)")
                                 .size(18.0)
                                 .strong()
                                 .color(self.theme.green_primary)
@@ -518,133 +394,10 @@ impl PhantomlinkApp {
                     
                     ui.add_space(12.0);
                     ui.label(
-                        egui::RichText::new("RTX Voice-like noise suppression for Linux")
+                        egui::RichText::new("Professional RTX Voice-style noise suppression with NVIDIA open drivers")
                             .size(12.0)
                             .color(self.theme.text_muted)
                     );
-                });
-            
-            ui.add_space(20.0);
-            
-            // GHOSTNV RTX Voice Controls
-            egui::Frame::none()
-                .fill(self.theme.translucent_input_bg())
-                .stroke(egui::Stroke::new(1.0, self.theme.green_primary))
-                .rounding(egui::Rounding::same(12.0))
-                .inner_margin(egui::Margin::same(16.0))
-                .show(ui, |ui| {
-                    ui.set_min_width(400.0);
-                    
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("🎮 GHOSTNV RTX Voice")
-                                .size(18.0)
-                                .strong()
-                                .color(self.theme.green_primary)
-                        );
-                        
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Status indicator
-                            let status_color = if self.ghostnv_available && self.ghostnv_enabled {
-                                self.theme.green_primary
-                            } else if self.ghostnv_available {
-                                self.theme.warning
-                            } else {
-                                self.theme.error
-                            };
-                            
-                            ui.add(StatusIndicator::new(
-                                if self.ghostnv_available && self.ghostnv_enabled { "ACTIVE" } else if self.ghostnv_available { "READY" } else { "UNAVAILABLE" },
-                                status_color
-                            ));
-                        });
-                    });
-                    
-                    ui.add_space(16.0);
-                    
-                    // Initialize GHOSTNV button
-                    if !self.ghostnv_initialized {
-                        if ui.add(enhanced_glow_button("🚀 Initialize GHOSTNV", &self.theme, GlowButtonStyle::Success)).clicked() {
-                            // This would need to be handled async in the app update loop
-                            self.ghostnv_initialized = true;
-                            self.ghostnv_available = true; // Assume success for now
-                        }
-                        
-                        ui.add_space(8.0);
-                        ui.label(
-                            egui::RichText::new("Click to initialize NVIDIA RTX Voice processing")
-                                .size(12.0)
-                                .color(self.theme.text_muted)
-                        );
-                    } else {
-                        // Enable/Disable toggle
-                        let mut ghostnv_enabled = self.ghostnv_enabled;
-                        if ui.add(
-                            egui::Checkbox::new(&mut ghostnv_enabled, "Enable GHOSTNV RTX Voice")
-                        ).changed() {
-                            self.ghostnv_enabled = ghostnv_enabled;
-                            // This would trigger async call to audio engine
-                        }
-                        
-                        if self.ghostnv_available && self.ghostnv_enabled {
-                            ui.add_space(12.0);
-                            
-                            // Enhancement mode selection
-                            ui.label(
-                                egui::RichText::new("Enhancement Mode:")
-                                    .size(14.0)
-                                    .color(self.theme.text_primary)
-                            );
-                            
-                            ui.add_space(8.0);
-                            
-                            ui.horizontal(|ui| {
-                                let modes = [
-                                    ("Gaming", "Aggressive enhancement for competitive gaming"),
-                                    ("Streaming", "Balanced enhancement with music awareness"),
-                                    ("Studio", "Maximum quality for recording/production")
-                                ];
-                                
-                                for (mode, description) in &modes {
-                                    if ui.add(
-                                        egui::RadioButton::new(false, *mode) // TODO: track selected mode
-                                    ).on_hover_text(*description).clicked() {
-                                        // TODO: Apply enhancement mode
-                                    }
-                                }
-                            });
-                            
-                            ui.add_space(12.0);
-                            
-                            // Session management
-                            ui.label(
-                                egui::RichText::new("Active Sessions:")
-                                    .size(14.0)
-                                    .color(self.theme.text_primary)
-                            );
-                            
-                            ui.add_space(8.0);
-                            
-                            ui.horizontal(|ui| {
-                                if ui.add(enhanced_glow_button("➕ Create Session", &self.theme, GlowButtonStyle::Primary)).clicked() {
-                                    // TODO: Create new GHOSTNV session
-                                }
-                                
-                                ui.label(
-                                    egui::RichText::new("User sessions: 0") // TODO: show actual count
-                                        .size(12.0)
-                                        .color(self.theme.text_secondary)
-                                );
-                            });
-                        }
-                        
-                        ui.add_space(12.0);
-                        ui.label(
-                            egui::RichText::new("Professional RTX Voice with music-aware enhancement")
-                                .size(12.0)
-                                .color(self.theme.text_muted)
-                        );
-                    }
                 });
             
             ui.add_space(20.0);
@@ -701,30 +454,15 @@ impl PhantomlinkApp {
                     
                     ui.horizontal(|ui| {
                         ui.label("Input Gain:");
-                        if ui.add(
+                        ui.add(
                             egui::Slider::new(&mut self.scarlett_gain, 0.0..=1.0)
-                                .show_value(true)
-                                .suffix("%")
-                        ).changed() {
-                            // Apply gain to Scarlett Solo hardware
-                            if let Some(ref scarlett) = self.scarlett {
-                                if let Err(e) = scarlett.set_input_gain(self.scarlett_gain) {
-                                    self.error_message = Some(format!("Scarlett gain error: {}", e));
-                                }
-                            }
-                        }
+                                .show_value(false)
+                        );
                     });
                     
                     ui.add_space(8.0);
                     
-                    if ui.checkbox(&mut self.scarlett_monitor, "Direct Monitor").changed() {
-                        // Apply direct monitor to Scarlett Solo hardware
-                        if let Some(ref scarlett) = self.scarlett {
-                            if let Err(e) = scarlett.set_direct_monitor(self.scarlett_monitor) {
-                                self.error_message = Some(format!("Scarlett monitor error: {}", e));
-                            }
-                        }
-                    }
+                    ui.checkbox(&mut self.scarlett_monitor, "Direct Monitor");
                 });
         }
     }
@@ -787,7 +525,7 @@ impl PhantomlinkApp {
                                     _ => "CHANNEL",
                                 };
                                 
-                                let response = channel_strip.show(
+                                let _response = channel_strip.show(
                                     ui,
                                     &self.theme,
                                     channel_name,
@@ -795,38 +533,7 @@ impl PhantomlinkApp {
                                     &self.vst_plugin_info,
                                 );
                                 
-                                // Handle channel strip responses for audio engine updates
-                                if response.volume_changed || response.gain_changed || 
-                                   response.pan_changed || response.mute_changed {
-                                    self.audio_engine.update_channel_advanced(
-                                        i,
-                                        channel_strip.volume,
-                                        channel_strip.muted,
-                                        channel_strip.gain,
-                                        channel_strip.pan,
-                                    );
-                                }
-                                
-                                // Handle VST changes
-                                if response.vst_changed {
-                                    if let Some(vst_idx) = channel_strip.selected_vst {
-                                        if let Some(plugin_path) = self.vst_plugins.get(vst_idx) {
-                                            match crate::vst_host::VstProcessor::load(plugin_path) {
-                                                Ok(vst_processor) => {
-                                                    println!("Loaded VST for channel {}: {}", i, plugin_path.display());
-                                                    self.audio_engine.set_channel_vst(i, Some(vst_processor));
-                                                }
-                                                Err(e) => {
-                                                    self.error_message = Some(format!("Failed to load VST: {}", e));
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        // Remove VST from channel
-                                        self.audio_engine.set_channel_vst(i, None);
-                                        println!("Removed VST from channel {}", i);
-                                    }
-                                }
+                                // TODO: Handle channel strip responses for audio engine updates
                             }
                         });
                     });

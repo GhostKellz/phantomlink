@@ -1,3 +1,8 @@
+//! JACK Audio Connection Kit integration for professional audio routing.
+
+#![allow(dead_code)] // Complete JACK API for future low-latency audio routing
+#![allow(unused_imports)]
+
 use crossbeam_channel::{Receiver, Sender};
 use jack::{AudioIn, AudioOut, Client, ClientOptions, Control, Port, ProcessHandler, ProcessScope};
 use std::sync::{Arc, Mutex};

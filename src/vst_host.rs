@@ -1,5 +1,10 @@
+//! VST2 Plugin hosting for audio effects and instruments.
+
+#![allow(dead_code)] // Complete VST hosting API for plugin management
+
 use vst::host::{Host, PluginLoader, PluginInstance};
 use vst::plugin::{Plugin, Category};
+#[allow(unused_imports)]
 use vst::buffer::AudioBuffer;
 use vst::api::Events;
 use std::sync::{Arc, Mutex};

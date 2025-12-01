@@ -1,3 +1,7 @@
+//! Application configuration persistence.
+
+#![allow(dead_code)] // Config API for save/load functionality
+
 use std::path::PathBuf;
 use std::fs;
 use serde::{Deserialize, Serialize};

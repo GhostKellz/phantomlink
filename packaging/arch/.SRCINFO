@@ -1,0 +1,25 @@
+pkgbase = phantomlink
+	pkgdesc = Professional audio mixer and interface control for Linux with RTX AI noise suppression
+	pkgver = 0.2.0
+	pkgrel = 1
+	url = https://github.com/ghostkellz/phantomlink
+	arch = x86_64
+	license = MIT
+	makedepends = rust
+	makedepends = cargo
+	makedepends = pkg-config
+	depends = alsa-lib
+	depends = pipewire
+	depends = gtk3
+	depends = libxkbcommon
+	depends = libxcb
+	optdepends = nvidia-open: RTX acceleration support (545+)
+	optdepends = cuda: CUDA acceleration for GhostWave AI
+	optdepends = jack2: JACK audio support
+	optdepends = realtime-privileges: Real-time audio scheduling
+	provides = phantomlink
+	conflicts = phantomlink-git
+	source = phantomlink-0.2.0.tar.gz::https://github.com/ghostkellz/phantomlink/archive/v0.2.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = phantomlink

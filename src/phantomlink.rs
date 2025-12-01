@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 // Re-export the VST types from vst_host module
-pub use crate::vst_host::{VstScanner, VstPluginInfo, VstCategory};
+pub use crate::vst_host::{VstScanner, VstPluginInfo};
 
 pub fn find_vst_plugins() -> Vec<PathBuf> {
     let dirs = vec![
@@ -32,7 +32,8 @@ pub fn scan_vst_plugins() -> Result<Vec<VstPluginInfo>, Box<dyn std::error::Erro
     Ok(scanner.get_plugins().to_vec())
 }
 
-// Audio routing configuration
+// Audio routing configuration (planned feature)
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AudioRoute {
     pub from: String,
@@ -41,10 +42,12 @@ pub struct AudioRoute {
     pub enabled: bool,
 }
 
+#[allow(dead_code)]
 pub struct AudioRouter {
     routes: Vec<AudioRoute>,
 }
 
+#[allow(dead_code)]
 impl AudioRouter {
     pub fn new() -> Self {
         Self {

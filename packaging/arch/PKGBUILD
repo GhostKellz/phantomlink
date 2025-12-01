@@ -1,0 +1,75 @@
+# Maintainer: Christopher Kelley <ckelley@ghostkellz.sh>
+pkgname=phantomlink
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Professional audio mixer and interface control for Linux with RTX AI noise suppression"
+arch=('x86_64')
+url="https://github.com/ghostkellz/phantomlink"
+license=('MIT')
+depends=(
+    'alsa-lib'
+    'pipewire'
+    'gtk3'
+    'libxkbcommon'
+    'libxcb'
+)
+makedepends=(
+    'rust'
+    'cargo'
+    'pkg-config'
+)
+optdepends=(
+    'nvidia-open: RTX acceleration support (545+)'
+    'cuda: CUDA acceleration for GhostWave AI'
+    'jack2: JACK audio support'
+    'realtime-privileges: Real-time audio scheduling'
+)
+provides=('phantomlink')
+conflicts=('phantomlink-git')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/ghostkellz/$pkgname/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+
+    # Build with release optimizations
+    export CARGO_HOME="$srcdir/cargo-home"
+    export RUSTUP_TOOLCHAIN=stable
+
+    cargo build --release --locked
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+
+    export CARGO_HOME="$srcdir/cargo-home"
+    cargo test --release --locked
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    # Install binary
+    install -Dm755 "target/release/phantomlink" "$pkgdir/usr/bin/phantomlink"
+
+    # Install desktop file
+    install -Dm644 "packaging/phantomlink.desktop" "$pkgdir/usr/share/applications/phantomlink.desktop"
+
+    # Install icons
+    install -Dm644 "assets/icons/icon-16x16.png" "$pkgdir/usr/share/icons/hicolor/16x16/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-48x48.png" "$pkgdir/usr/share/icons/hicolor/48x48/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-64x64.png" "$pkgdir/usr/share/icons/hicolor/64x64/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-256x256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/phantomlink.png"
+    install -Dm644 "assets/icons/icon-512x512.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/phantomlink.png"
+
+    # Install license
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+    # Install documentation
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "docs/README.md" "$pkgdir/usr/share/doc/$pkgname/docs/README.md"
+    install -Dm644 "docs/getting-started.md" "$pkgdir/usr/share/doc/$pkgname/docs/getting-started.md"
+    install -Dm644 "docs/features.md" "$pkgdir/usr/share/doc/$pkgname/docs/features.md"
+}

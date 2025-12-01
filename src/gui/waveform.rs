@@ -1,6 +1,14 @@
+//! Waveform visualization module for real-time audio display.
+//!
+//! This module provides components for visualizing audio waveforms
+//! in the PhantomLink mixer interface.
+
+#![allow(dead_code)] // Public API for future waveform display panels
+
 use eframe::egui;
 use std::collections::VecDeque;
 
+/// Real-time waveform display for audio visualization
 pub struct WaveformDisplay {
     samples: VecDeque<f32>,
     max_samples: usize,

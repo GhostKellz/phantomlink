@@ -4,20 +4,19 @@ pub mod visualizer;
 pub mod mixer;
 pub mod applications;
 pub mod waveform;
-pub mod production_enhancements;
 mod enhanced_methods;
 
 use eframe::egui;
 use crate::phantomlink;
-use crate::scarlett::ScarlettSolo;
+use crate::scarlett::{ScarlettSolo, AirMode, InputLevel, CaptureSource, LevelMeters};
 use crate::audio::AudioEngine;
-use crate::gui::theme::WavelinkTheme;
+use crate::gui::theme::{WavelinkTheme, ThemePreset};
 use crate::gui::widgets::{ModernChannelStrip, StatusIndicator, enhanced_glow_button, GlowButtonStyle};
 use crate::gui::applications::ApplicationManager;
 use crate::gui::mixer::MixerPanel;
 use crate::gui::visualizer::SpectrumAnalyzer;
 use crate::advanced_denoising::{DenoisingMode, DenoisingMetrics};
-use crate::ghostwave_integration::PhantomLinkProfile;
+use crate::ghostwave_integration::{PhantomLinkProfile, GhostWaveIntegration, detect_nvidia_driver, DriverInfo};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MainTab {
@@ -28,6 +27,7 @@ pub enum MainTab {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct NotificationMessage {
     pub text: String,
     pub level: NotificationLevel,
@@ -36,6 +36,7 @@ pub struct NotificationMessage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum NotificationLevel {
     Info,
     Warning,
@@ -54,16 +55,32 @@ pub struct PhantomlinkApp {
     vst_plugin_info: Vec<phantomlink::VstPluginInfo>,
     channel_strips: [ModernChannelStrip; 4],
     scarlett: Option<ScarlettSolo>,
-    scarlett_gain: f32,
-    scarlett_monitor: bool,
+    scarlett_phantom_power: bool,
+    scarlett_air_mode: AirMode,
+    scarlett_input_level: InputLevel,
+    scarlett_direct_monitor: bool,
     audio_engine: AudioEngine,
     audio_started: bool,
     error_message: Option<String>,
+    // Theme system
     theme: WavelinkTheme,
-    // Advanced denoising state
+    theme_preset: ThemePreset,
+    // GhostWave AI denoising
+    ghostwave: Option<GhostWaveIntegration>,
+    ghostwave_profile: PhantomLinkProfile,
+    ghostwave_strength: f32,
+    driver_info: DriverInfo,
+    // Legacy denoising state (fallback)
     current_denoising_mode: DenoisingMode,
     advanced_denoising_enabled: bool,
     show_denoising_metrics: bool,
+    // Echo cancellation
+    echo_cancellation_enabled: bool,
+    // Scarlett DSP routing
+    scarlett_level_meters: LevelMeters,
+    scarlett_dsp1_source: CaptureSource,
+    scarlett_dsp2_source: CaptureSource,
+    show_dsp_routing: bool,
     // GUI Panels
     application_manager: ApplicationManager,
     mixer_panel: MixerPanel,
@@ -78,6 +95,7 @@ pub struct PhantomlinkApp {
     last_save_time: std::time::Instant,
     master_volume: f32,
     mute_all: bool,
+    #[allow(dead_code)]
     solo_any: bool,
 }
 
@@ -86,6 +104,25 @@ impl Default for PhantomlinkApp {
         let scarlett = ScarlettSolo::new().ok();
         let vst_plugins = phantomlink::find_vst_plugins();
         let vst_plugin_info = phantomlink::scan_vst_plugins().unwrap_or_default();
+
+        // Read Scarlett state if available
+        let (phantom_power, air_mode, input_level, direct_monitor) = scarlett
+            .as_ref()
+            .map(|s| (
+                s.get_phantom_power(),
+                s.get_air_mode(),
+                s.get_input_level(),
+                s.get_direct_monitor(),
+            ))
+            .unwrap_or((false, AirMode::Off, InputLevel::Line, false));
+
+        // Initialize GhostWave if available
+        let ghostwave = GhostWaveIntegration::new().ok();
+        let driver_info = detect_nvidia_driver();
+
+        // Default theme is Tokyo Night
+        let theme_preset = ThemePreset::default();
+        let theme = WavelinkTheme::with_preset(theme_preset);
 
         Self {
             vst_plugins,
@@ -97,15 +134,33 @@ impl Default for PhantomlinkApp {
                 ModernChannelStrip::new(),
             ],
             scarlett,
-            scarlett_gain: 0.5,
-            scarlett_monitor: false,
+            scarlett_phantom_power: phantom_power,
+            scarlett_air_mode: air_mode,
+            scarlett_input_level: input_level,
+            scarlett_direct_monitor: direct_monitor,
             audio_engine: AudioEngine::new(),
             audio_started: false,
             error_message: None,
-            theme: WavelinkTheme::new(),
+            // Theme
+            theme,
+            theme_preset,
+            // GhostWave
+            ghostwave,
+            ghostwave_profile: PhantomLinkProfile::default(),
+            ghostwave_strength: 0.65,
+            driver_info,
+            // Legacy denoising
             current_denoising_mode: DenoisingMode::Enhanced,
             advanced_denoising_enabled: true,
             show_denoising_metrics: false,
+            // Echo cancellation
+            echo_cancellation_enabled: false,
+            // Scarlett DSP routing
+            scarlett_level_meters: LevelMeters::default(),
+            scarlett_dsp1_source: CaptureSource::Analogue1,
+            scarlett_dsp2_source: CaptureSource::Analogue2,
+            show_dsp_routing: false,
+            // Panels
             application_manager: ApplicationManager::default(),
             mixer_panel: MixerPanel::default(),
             spectrum_analyzer: SpectrumAnalyzer::new(48000.0),
@@ -433,36 +488,367 @@ impl PhantomlinkApp {
     }
     
     fn draw_scarlett_controls(&mut self, ui: &mut egui::Ui) {
-        // Scarlett Solo Controls
-        if let Some(ref _scarlett) = self.scarlett {
+        // Scarlett Solo 4th Gen Controls
+        if self.scarlett.is_some() {
             egui::Frame::none()
                 .fill(self.theme.translucent_input_bg())
-                .stroke(egui::Stroke::new(1.0, self.theme.green_primary))
+                .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(0xdc, 0x14, 0x3c))) // Focusrite red
+                .rounding(egui::Rounding::same(12.0))
+                .inner_margin(egui::Margin::same(20.0))
+                .show(ui, |ui| {
+                    // Header
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("🎤")
+                                .size(22.0)
+                        );
+                        ui.vertical(|ui| {
+                            ui.label(
+                                egui::RichText::new("Scarlett Solo 4th Gen")
+                                    .size(18.0)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(0xdc, 0x14, 0x3c))
+                            );
+                            if let Some(ref scarlett) = self.scarlett {
+                                ui.label(
+                                    egui::RichText::new(format!("Card {} • Firmware {}",
+                                        scarlett.get_card_num(),
+                                        scarlett.get_firmware_version()))
+                                        .size(11.0)
+                                        .color(self.theme.text_muted)
+                                );
+                            }
+                        });
+                    });
+
+                    ui.add_space(16.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+
+                    // Two column layout
+                    ui.horizontal_top(|ui| {
+                        // Left column - XLR Input (Mic)
+                        ui.vertical(|ui| {
+                            ui.set_min_width(200.0);
+
+                            ui.label(
+                                egui::RichText::new("XLR Input (Rode PodMic)")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(self.theme.text_primary)
+                            );
+
+                            ui.add_space(10.0);
+
+                            // 48V Phantom Power
+                            ui.horizontal(|ui| {
+                                let phantom_color = if self.scarlett_phantom_power {
+                                    egui::Color32::from_rgb(0xff, 0x66, 0x00) // Orange when on
+                                } else {
+                                    self.theme.text_muted
+                                };
+
+                                ui.label(
+                                    egui::RichText::new("⚡")
+                                        .size(16.0)
+                                        .color(phantom_color)
+                                );
+
+                                if ui.checkbox(&mut self.scarlett_phantom_power, "48V Phantom Power").changed() {
+                                    if let Some(ref mut scarlett) = self.scarlett {
+                                        if let Err(e) = scarlett.set_phantom_power(self.scarlett_phantom_power) {
+                                            self.error_message = Some(format!("Phantom power: {}", e));
+                                        }
+                                    }
+                                }
+                            });
+
+                            ui.add_space(8.0);
+
+                            // Air Mode
+                            ui.label(
+                                egui::RichText::new("Air Mode:")
+                                    .size(12.0)
+                                    .color(self.theme.text_secondary)
+                            );
+
+                            ui.add_space(4.0);
+
+                            ui.horizontal(|ui| {
+                                for mode in AirMode::all() {
+                                    let is_selected = self.scarlett_air_mode == *mode;
+
+                                    let button = egui::Button::new(
+                                        egui::RichText::new(mode.name())
+                                            .size(11.0)
+                                            .color(if is_selected {
+                                                self.theme.bg_dark
+                                            } else {
+                                                self.theme.text_secondary
+                                            })
+                                    )
+                                    .fill(if is_selected {
+                                        egui::Color32::from_rgb(0x00, 0x9e, 0xc3) // Focusrite teal
+                                    } else {
+                                        self.theme.input_bg
+                                    })
+                                    .rounding(egui::Rounding::same(4.0));
+
+                                    if ui.add(button).on_hover_text(mode.description()).clicked() {
+                                        self.scarlett_air_mode = *mode;
+                                        if let Some(ref mut scarlett) = self.scarlett {
+                                            if let Err(e) = scarlett.set_air_mode(*mode) {
+                                                self.error_message = Some(format!("Air mode: {}", e));
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        });
+
+                        ui.add_space(24.0);
+
+                        // Right column - Line Input + Monitor
+                        ui.vertical(|ui| {
+                            ui.set_min_width(180.0);
+
+                            ui.label(
+                                egui::RichText::new("Line Input 1 (1/4\")")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(self.theme.text_primary)
+                            );
+
+                            ui.add_space(10.0);
+
+                            // Input Level
+                            ui.horizontal(|ui| {
+                                ui.label("Level:");
+
+                                let line_selected = self.scarlett_input_level == InputLevel::Line;
+                                if ui.selectable_label(line_selected, "Line").clicked() && !line_selected {
+                                    self.scarlett_input_level = InputLevel::Line;
+                                    if let Some(ref mut scarlett) = self.scarlett {
+                                        let _ = scarlett.set_input_level(InputLevel::Line);
+                                    }
+                                }
+
+                                let inst_selected = self.scarlett_input_level == InputLevel::Instrument;
+                                if ui.selectable_label(inst_selected, "Inst").clicked() && !inst_selected {
+                                    self.scarlett_input_level = InputLevel::Instrument;
+                                    if let Some(ref mut scarlett) = self.scarlett {
+                                        let _ = scarlett.set_input_level(InputLevel::Instrument);
+                                    }
+                                }
+                            });
+
+                            ui.add_space(16.0);
+
+                            // Direct Monitor
+                            ui.label(
+                                egui::RichText::new("Monitoring")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(self.theme.text_primary)
+                            );
+
+                            ui.add_space(8.0);
+
+                            let monitor_color = if self.scarlett_direct_monitor {
+                                self.theme.success
+                            } else {
+                                self.theme.text_muted
+                            };
+
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("🎧")
+                                        .size(16.0)
+                                        .color(monitor_color)
+                                );
+
+                                if ui.checkbox(&mut self.scarlett_direct_monitor, "Direct Monitor").changed() {
+                                    if let Some(ref mut scarlett) = self.scarlett {
+                                        if let Err(e) = scarlett.set_direct_monitor(self.scarlett_direct_monitor) {
+                                            self.error_message = Some(format!("Direct monitor: {}", e));
+                                        }
+                                    }
+                                }
+                            });
+
+                            ui.label(
+                                egui::RichText::new("Zero-latency hardware monitoring")
+                                    .size(10.0)
+                                    .color(self.theme.text_muted)
+                            );
+                        });
+                    });
+
+                    // Hardware Level Meters Section
+                    ui.add_space(16.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("📊 Hardware Level Meters")
+                                .size(14.0)
+                                .strong()
+                                .color(self.theme.text_primary)
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("🔧").on_hover_text("DSP Routing").clicked() {
+                                self.show_dsp_routing = !self.show_dsp_routing;
+                            }
+                        });
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Read level meters from hardware
+                    if let Some(ref scarlett) = self.scarlett {
+                        if let Ok(meters) = scarlett.read_level_meters() {
+                            self.scarlett_level_meters = meters;
+                        }
+                    }
+
+                    // Display the 4 primary level meters (Input 1, Input 2, Mix A L, Mix A R)
+                    let meter_channels = [
+                        (0, "IN 1"),   // Analogue 1
+                        (1, "IN 2"),   // Analogue 2
+                        (4, "OUT L"),  // Mix A L
+                        (5, "OUT R"),  // Mix A R
+                    ];
+
+                    ui.horizontal(|ui| {
+                        for (idx, label) in &meter_channels {
+                            ui.vertical(|ui| {
+                                ui.set_min_width(50.0);
+                                ui.label(
+                                    egui::RichText::new(*label)
+                                        .size(10.0)
+                                        .color(self.theme.text_secondary)
+                                );
+
+                                let level = self.scarlett_level_meters.get_normalized(*idx);
+                                let db = self.scarlett_level_meters.get_db(*idx);
+
+                                // Vertical meter bar
+                                let (response, painter) = ui.allocate_painter(
+                                    egui::Vec2::new(12.0, 80.0),
+                                    egui::Sense::hover()
+                                );
+
+                                let rect = response.rect;
+                                painter.rect_filled(rect, 2.0, self.theme.bg_highlight);
+
+                                // Fill based on level
+                                let fill_height = rect.height() * level;
+                                let fill_rect = egui::Rect::from_min_max(
+                                    egui::Pos2::new(rect.left(), rect.bottom() - fill_height),
+                                    rect.max
+                                );
+
+                                // Color gradient based on level
+                                let color = if level > 0.9 {
+                                    self.theme.error
+                                } else if level > 0.7 {
+                                    egui::Color32::from_rgb(0xff, 0xcc, 0x00) // Yellow
+                                } else {
+                                    self.theme.success
+                                };
+
+                                painter.rect_filled(fill_rect, 2.0, color);
+
+                                // dB label
+                                if db > -60.0 {
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.0}", db))
+                                            .size(9.0)
+                                            .color(self.theme.text_muted)
+                                    );
+                                }
+                            });
+                            ui.add_space(4.0);
+                        }
+                    });
+
+                    // DSP Routing Panel (collapsible)
+                    if self.show_dsp_routing {
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+
+                        ui.label(
+                            egui::RichText::new("🔀 DSP Input Routing")
+                                .size(12.0)
+                                .strong()
+                                .color(self.theme.accent_secondary)
+                        );
+
+                        ui.add_space(6.0);
+
+                        // DSP Input 1 source selector
+                        ui.horizontal(|ui| {
+                            ui.label("DSP 1:");
+                            egui::ComboBox::from_id_source("dsp1_source")
+                                .selected_text(self.scarlett_dsp1_source.name())
+                                .show_ui(ui, |ui| {
+                                    for source in CaptureSource::all() {
+                                        if ui.selectable_value(
+                                            &mut self.scarlett_dsp1_source,
+                                            *source,
+                                            source.name()
+                                        ).changed() {
+                                            if let Some(ref scarlett) = self.scarlett {
+                                                let _ = scarlett.set_dsp_input(1, *source);
+                                            }
+                                        }
+                                    }
+                                });
+                        });
+
+                        // DSP Input 2 source selector
+                        ui.horizontal(|ui| {
+                            ui.label("DSP 2:");
+                            egui::ComboBox::from_id_source("dsp2_source")
+                                .selected_text(self.scarlett_dsp2_source.name())
+                                .show_ui(ui, |ui| {
+                                    for source in CaptureSource::all() {
+                                        if ui.selectable_value(
+                                            &mut self.scarlett_dsp2_source,
+                                            *source,
+                                            source.name()
+                                        ).changed() {
+                                            if let Some(ref scarlett) = self.scarlett {
+                                                let _ = scarlett.set_dsp_input(2, *source);
+                                            }
+                                        }
+                                    }
+                                });
+                        });
+                    }
+                });
+        } else {
+            // No Scarlett detected
+            egui::Frame::none()
+                .fill(self.theme.translucent_input_bg())
+                .stroke(egui::Stroke::new(1.0, self.theme.warning))
                 .rounding(egui::Rounding::same(12.0))
                 .inner_margin(egui::Margin::same(16.0))
                 .show(ui, |ui| {
-                    ui.set_max_width(400.0);
-                    
-                    ui.label(
-                        egui::RichText::new("🎤 Scarlett Solo")
-                            .size(16.0)
-                            .strong()
-                            .color(self.theme.green_primary)
-                    );
-                    
-                    ui.add_space(12.0);
-                    
                     ui.horizontal(|ui| {
-                        ui.label("Input Gain:");
-                        ui.add(
-                            egui::Slider::new(&mut self.scarlett_gain, 0.0..=1.0)
-                                .show_value(false)
+                        ui.label(
+                            egui::RichText::new("⚠")
+                                .size(18.0)
+                                .color(self.theme.warning)
+                        );
+                        ui.label(
+                            egui::RichText::new("Scarlett Solo 4th Gen not detected")
+                                .color(self.theme.text_secondary)
                         );
                     });
-                    
-                    ui.add_space(8.0);
-                    
-                    ui.checkbox(&mut self.scarlett_monitor, "Direct Monitor");
                 });
         }
     }
@@ -470,7 +856,7 @@ impl PhantomlinkApp {
     fn draw_mixer_panel(&mut self, ui: &mut egui::Ui) {
         egui::Frame::none()
             .fill(self.theme.translucent_panel_bg())
-            .stroke(egui::Stroke::new(1.0, self.theme.medium_blue))
+            .stroke(egui::Stroke::new(1.0, self.theme.accent_primary))
             .rounding(egui::Rounding::same(16.0))
             .inner_margin(egui::Margin::same(24.0))
             .show(ui, |ui| {
@@ -480,10 +866,22 @@ impl PhantomlinkApp {
                         egui::RichText::new("🎛️ AUDIO MIXER")
                             .size(22.0)
                             .strong()
-                            .color(self.theme.green_primary)
+                            .color(self.theme.accent_primary)
                     );
-                    
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // GhostWave status indicator
+                        if let Some(ref gw) = self.ghostwave {
+                            if gw.is_enabled() {
+                                ui.label(
+                                    egui::RichText::new("🔇 GhostWave Active")
+                                        .size(11.0)
+                                        .color(self.theme.accent_secondary)
+                                );
+                                ui.add_space(12.0);
+                            }
+                        }
+
                         ui.label(
                             egui::RichText::new("4-Channel Professional Mixer")
                                 .size(13.0)
@@ -546,30 +944,30 @@ impl PhantomlinkApp {
                             egui::RichText::new("🌊 Spectrum Analyzer")
                                 .size(14.0)
                                 .strong()
-                                .color(self.theme.green_primary)
+                                .color(self.theme.accent_secondary)
                         );
-                        
+
                         ui.add_space(8.0);
-                        
+
                         // Spectrum analyzer display
                         egui::Frame::none()
-                            .fill(egui::Color32::from_rgba_premultiplied(0, 0, 0, 64))
-                            .stroke(egui::Stroke::new(1.0, self.theme.green_primary))
+                            .fill(self.theme.vu_meter_bg())
+                            .stroke(egui::Stroke::new(1.0, self.theme.accent_secondary))
                             .rounding(egui::Rounding::same(8.0))
                             .inner_margin(egui::Margin::same(12.0))
                             .show(ui, |ui| {
                                 ui.set_min_size(egui::Vec2::new(280.0, 200.0));
-                                
+
                                 // Update spectrum data from audio engine
                                 if let Some(spectrum_data) = self.audio_engine.get_spectrum_data_vec() {
                                     self.spectrum_analyzer.update(&spectrum_data);
                                 }
-                                
+
                                 self.spectrum_analyzer.render(ui, &self.theme);
                             });
-                        
+
                         ui.add_space(12.0);
-                        
+
                         // Master controls
                         ui.label(
                             egui::RichText::new("Master Controls")
@@ -577,22 +975,32 @@ impl PhantomlinkApp {
                                 .strong()
                                 .color(self.theme.text_secondary)
                         );
-                        
+
                         ui.add_space(8.0);
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Master Volume:");
-                            ui.add(egui::Slider::new(&mut 0.8f32, 0.0..=1.0).show_value(false));
+                            ui.add(egui::Slider::new(&mut self.master_volume, 0.0..=1.0).show_value(false));
                         });
-                        
+
                         ui.add_space(4.0);
-                        
+
                         ui.horizontal(|ui| {
-                            if ui.small_button("🔇 MUTE ALL").clicked() {
-                                // TODO: Mute all channels
-                            }
-                            if ui.small_button("🔊 UNMUTE ALL").clicked() {
-                                // TODO: Unmute all channels
+                            let mute_style = if self.mute_all {
+                                GlowButtonStyle::Danger
+                            } else {
+                                GlowButtonStyle::Secondary
+                            };
+
+                            if ui.add(enhanced_glow_button(
+                                if self.mute_all { "🔇 UNMUTE" } else { "🔇 MUTE ALL" },
+                                &self.theme, mute_style)).clicked()
+                            {
+                                self.mute_all = !self.mute_all;
+                                // Apply to all channel strips
+                                for strip in &mut self.channel_strips {
+                                    strip.muted = self.mute_all;
+                                }
                             }
                         });
                     });

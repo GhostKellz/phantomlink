@@ -1,8 +1,9 @@
 // Additional methods for the enhanced PhantomlinkApp
 use eframe::egui;
-use crate::gui::theme::WavelinkTheme;
+use crate::gui::theme::{WavelinkTheme, ThemePreset};
 use crate::gui::widgets::{enhanced_glow_button, GlowButtonStyle};
 use crate::gui::NotificationLevel;
+use crate::ghostwave_integration::PhantomLinkProfile;
 
 impl super::PhantomlinkApp {
     pub fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
@@ -165,113 +166,356 @@ impl super::PhantomlinkApp {
     }
 
     pub fn draw_settings_panel(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::none()
-            .fill(self.theme.translucent_panel_bg())
-            .stroke(egui::Stroke::new(1.0, self.theme.medium_blue))
-            .rounding(egui::Rounding::same(16.0))
-            .inner_margin(egui::Margin::same(24.0))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("⚙️")
-                        .size(24.0)
-                        .color(self.theme.green_primary));
-                    ui.label(egui::RichText::new("Application Settings")
-                        .size(20.0)
-                        .strong()
-                        .color(self.theme.green_primary));
-                });
+        ui.horizontal_top(|ui| {
+            // Left column - Theme & Interface
+            egui::Frame::none()
+                .fill(self.theme.translucent_panel_bg())
+                .stroke(egui::Stroke::new(1.0, self.theme.accent_primary))
+                .rounding(egui::Rounding::same(16.0))
+                .inner_margin(egui::Margin::same(20.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(380.0);
 
-                ui.add_space(20.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("🎨")
+                            .size(22.0)
+                            .color(self.theme.accent_primary));
+                        ui.label(egui::RichText::new("Theme & Appearance")
+                            .size(18.0)
+                            .strong()
+                            .color(self.theme.accent_primary));
+                    });
 
-                // Interface Settings
-                ui.collapsing("🖥️ Interface", |ui| {
+                    ui.add_space(16.0);
+
+                    // Theme selector
+                    ui.label(egui::RichText::new("Color Theme:")
+                        .size(14.0)
+                        .color(self.theme.text_primary));
+
+                    ui.add_space(8.0);
+
+                    // Theme grid - 3 columns
+                    egui::Grid::new("theme_grid")
+                        .num_columns(3)
+                        .spacing([8.0, 8.0])
+                        .show(ui, |ui| {
+                            for (i, preset) in ThemePreset::all().iter().enumerate() {
+                                let is_selected = self.theme_preset == *preset;
+                                let button_text = preset.name();
+
+                                let button = egui::Button::new(
+                                    egui::RichText::new(button_text)
+                                        .size(12.0)
+                                        .color(if is_selected {
+                                            self.theme.bg_dark
+                                        } else {
+                                            self.theme.text_primary
+                                        })
+                                )
+                                .fill(if is_selected {
+                                    self.theme.accent_primary
+                                } else {
+                                    self.theme.card_bg
+                                })
+                                .stroke(egui::Stroke::new(
+                                    if is_selected { 2.0 } else { 1.0 },
+                                    if is_selected { self.theme.accent_glow } else { self.theme.bg_highlight }
+                                ))
+                                .rounding(egui::Rounding::same(6.0))
+                                .min_size(egui::Vec2::new(110.0, 32.0));
+
+                                if ui.add(button).clicked() && !is_selected {
+                                    self.theme_preset = *preset;
+                                    self.theme = WavelinkTheme::with_preset(*preset);
+                                    self.add_notification(
+                                        &format!("Theme changed to {}", preset.name()),
+                                        NotificationLevel::Success
+                                    );
+                                }
+
+                                if (i + 1) % 3 == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+
+                    ui.add_space(20.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+
+                    // Interface settings
+                    ui.label(egui::RichText::new("Interface Options:")
+                        .size(14.0)
+                        .color(self.theme.text_primary));
+
+                    ui.add_space(8.0);
+
                     ui.checkbox(&mut self.keyboard_shortcuts_enabled, "Enable keyboard shortcuts");
-                    ui.checkbox(&mut self.auto_save_enabled, "Auto-save configuration every 5 minutes");
+                    ui.checkbox(&mut self.auto_save_enabled, "Auto-save every 5 minutes");
 
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.label("UI Scale:");
-                        ui.add(egui::Slider::new(&mut 1.0f32, 0.5..=2.0)
-                            .step_by(0.1)
-                            .suffix("x"));
-                    });
+                    ui.add_space(12.0);
+
+                    // Audio settings
+                    ui.label(egui::RichText::new("Audio Engine:")
+                        .size(14.0)
+                        .color(self.theme.text_primary));
+
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("audio_info")
+                        .num_columns(2)
+                        .spacing([12.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Sample Rate:");
+                            ui.label(egui::RichText::new("48000 Hz").color(self.theme.success));
+                            ui.end_row();
+
+                            ui.label("Buffer Size:");
+                            ui.label(egui::RichText::new("256 samples").color(self.theme.success));
+                            ui.end_row();
+
+                            ui.label("Latency:");
+                            ui.label(egui::RichText::new("~5.3ms").color(self.theme.success));
+                            ui.end_row();
+                        });
                 });
 
-                ui.add_space(15.0);
+            ui.add_space(16.0);
 
-                // Audio Settings
-                ui.collapsing("🔊 Audio Engine", |ui| {
+            // Right column - GhostWave AI Denoising
+            egui::Frame::none()
+                .fill(self.theme.translucent_panel_bg())
+                .stroke(egui::Stroke::new(1.0, self.theme.accent_secondary))
+                .rounding(egui::Rounding::same(16.0))
+                .inner_margin(egui::Margin::same(20.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(400.0);
+
                     ui.horizontal(|ui| {
-                        ui.label("Sample Rate:");
-                        ui.label(egui::RichText::new("48000 Hz")
-                            .color(self.theme.success));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Buffer Size:");
-                        ui.label(egui::RichText::new("256 samples")
-                            .color(self.theme.success));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Latency:");
-                        ui.label(egui::RichText::new("~5.3ms")
-                            .color(self.theme.success));
+                        ui.label(egui::RichText::new("🔇")
+                            .size(22.0)
+                            .color(self.theme.accent_secondary));
+                        ui.label(egui::RichText::new("GhostWave AI Denoising")
+                            .size(18.0)
+                            .strong()
+                            .color(self.theme.accent_secondary));
                     });
 
-                    ui.add_space(8.0);
-                    ui.label(egui::RichText::new("Backend: PipeWire → ALSA → Scarlett Solo")
+                    ui.add_space(12.0);
+
+                    // GPU Status
+                    egui::Frame::none()
+                        .fill(self.theme.bg_highlight)
+                        .rounding(egui::Rounding::same(8.0))
+                        .inner_margin(egui::Margin::same(12.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let rtx_active = self.ghostwave.as_ref()
+                                    .map(|g| g.is_rtx_active())
+                                    .unwrap_or(false);
+
+                                let status_color = if rtx_active {
+                                    self.theme.success
+                                } else if self.ghostwave.is_some() {
+                                    self.theme.warning
+                                } else {
+                                    self.theme.error
+                                };
+
+                                ui.label(egui::RichText::new("●")
+                                    .size(16.0)
+                                    .color(status_color));
+
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(&self.driver_info.gpu_name)
+                                        .size(13.0)
+                                        .strong()
+                                        .color(self.theme.text_primary));
+
+                                    let status_text = if rtx_active {
+                                        format!("RTX Active - {}", self.driver_info.driver_type)
+                                    } else if self.ghostwave.is_some() {
+                                        "CPU Mode".to_string()
+                                    } else {
+                                        "GhostWave unavailable".to_string()
+                                    };
+
+                                    ui.label(egui::RichText::new(status_text)
+                                        .size(11.0)
+                                        .color(self.theme.text_muted));
+                                });
+                            });
+                        });
+
+                    ui.add_space(16.0);
+
+                    // Enable toggle
+                    let mut enabled = self.ghostwave.as_ref()
+                        .map(|g| g.is_enabled())
+                        .unwrap_or(false);
+
+                    if ui.checkbox(&mut enabled, "Enable AI Noise Suppression").changed() {
+                        if let Some(ref mut gw) = self.ghostwave {
+                            gw.set_enabled(enabled);
+                        }
+                    }
+
+                    if enabled && self.ghostwave.is_some() {
+                        ui.add_space(12.0);
+
+                        // Profile selector
+                        ui.label(egui::RichText::new("Processing Profile:")
+                            .size(13.0)
+                            .color(self.theme.text_primary));
+
+                        ui.add_space(6.0);
+
+                        ui.horizontal(|ui| {
+                            for profile in PhantomLinkProfile::all() {
+                                let is_selected = self.ghostwave_profile == *profile;
+
+                                let button = egui::Button::new(
+                                    egui::RichText::new(profile.name())
+                                        .size(11.0)
+                                        .color(if is_selected {
+                                            self.theme.bg_dark
+                                        } else {
+                                            self.theme.text_secondary
+                                        })
+                                )
+                                .fill(if is_selected {
+                                    self.theme.accent_secondary
+                                } else {
+                                    self.theme.input_bg
+                                })
+                                .rounding(egui::Rounding::same(4.0));
+
+                                if ui.add(button).on_hover_text(profile.description()).clicked() {
+                                    self.ghostwave_profile = *profile;
+                                    if let Some(ref mut gw) = self.ghostwave {
+                                        let _ = gw.set_profile(*profile);
+                                    }
+                                }
+                            }
+                        });
+
+                        ui.add_space(12.0);
+
+                        // Strength slider
+                        ui.horizontal(|ui| {
+                            ui.label("Suppression Strength:");
+
+                            let slider = egui::Slider::new(&mut self.ghostwave_strength, 0.0..=1.0)
+                                .show_value(true)
+                                .custom_formatter(|v, _| format!("{:.0}%", v * 100.0));
+
+                            if ui.add(slider).changed() {
+                                if let Some(ref mut gw) = self.ghostwave {
+                                    let _ = gw.set_noise_strength(self.ghostwave_strength);
+                                }
+                            }
+                        });
+
+                        ui.add_space(8.0);
+
+                        // Echo Cancellation toggle
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("🔊")
+                                .size(14.0)
+                                .color(if self.echo_cancellation_enabled {
+                                    self.theme.accent_secondary
+                                } else {
+                                    self.theme.text_muted
+                                }));
+
+                            if ui.checkbox(&mut self.echo_cancellation_enabled, "Echo Cancellation (AEC)")
+                                .on_hover_text("Removes speaker audio from microphone input")
+                                .changed()
+                            {
+                                if let Some(ref mut gw) = self.ghostwave {
+                                    gw.set_echo_cancellation(self.echo_cancellation_enabled);
+                                }
+                            }
+                        });
+
+                        if self.echo_cancellation_enabled {
+                            ui.label(egui::RichText::new("Uses speaker output as reference for echo removal")
+                                .size(10.0)
+                                .italics()
+                                .color(self.theme.text_muted));
+                        }
+
+                        ui.add_space(12.0);
+
+                        // Metrics
+                        if let Some(ref gw) = self.ghostwave {
+                            let metrics = gw.get_metrics();
+
+                            egui::Grid::new("ghostwave_metrics")
+                                .num_columns(2)
+                                .spacing([12.0, 4.0])
+                                .show(ui, |ui| {
+                                    ui.label("Processing Latency:");
+                                    let latency_color = if metrics.latency_ms < 5.0 {
+                                        self.theme.success
+                                    } else if metrics.latency_ms < 15.0 {
+                                        self.theme.warning
+                                    } else {
+                                        self.theme.error
+                                    };
+                                    ui.label(egui::RichText::new(format!("{:.1}ms", metrics.latency_ms))
+                                        .color(latency_color));
+                                    ui.end_row();
+
+                                    ui.label("Frames Processed:");
+                                    ui.label(egui::RichText::new(format!("{}", metrics.frames_processed))
+                                        .color(self.theme.text_secondary));
+                                    ui.end_row();
+                                });
+                        }
+                    }
+
+                    ui.add_space(12.0);
+
+                    ui.label(egui::RichText::new("NVIDIA Broadcast-quality noise suppression for Linux")
                         .size(11.0)
+                        .italics()
                         .color(self.theme.text_muted));
                 });
+        });
 
-                ui.add_space(15.0);
+        ui.add_space(20.0);
 
-                // Performance Monitor
-                ui.collapsing("📊 Performance", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("CPU Usage:");
-                        ui.label(egui::RichText::new("12%")
-                            .color(self.theme.success));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Memory Usage:");
-                        ui.label(egui::RichText::new("45 MB")
-                            .color(self.theme.success));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Audio Dropouts:");
-                        ui.label(egui::RichText::new("0")
-                            .color(self.theme.success));
-                    });
-                });
-
-                ui.add_space(20.0);
-                ui.separator();
-                ui.add_space(15.0);
-
-                // Action buttons
+        // Bottom action bar
+        egui::Frame::none()
+            .fill(self.theme.translucent_panel_bg())
+            .stroke(egui::Stroke::new(1.0, self.theme.bg_highlight))
+            .rounding(egui::Rounding::same(12.0))
+            .inner_margin(egui::Margin::same(16.0))
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.add(enhanced_glow_button("💾 Save Settings", &self.theme, GlowButtonStyle::Success)).clicked() {
                         self.save_configuration();
                     }
 
                     if ui.add(enhanced_glow_button("🔄 Reset to Defaults", &self.theme, GlowButtonStyle::Warning)).clicked() {
+                        self.theme_preset = ThemePreset::default();
+                        self.theme = WavelinkTheme::with_preset(self.theme_preset);
                         self.add_notification("Settings reset to defaults", NotificationLevel::Info);
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new("PhantomLink v0.2.0 + GhostWave")
+                            .size(11.0)
+                            .color(self.theme.text_muted));
+
+                        ui.add_space(16.0);
+
                         if ui.add(enhanced_glow_button("❓ Help", &self.theme, GlowButtonStyle::Secondary)).clicked() {
                             self.show_help_overlay = true;
                         }
                     });
-                });
-
-                ui.add_space(10.0);
-
-                // Version info
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new("PhantomLink v0.2.0 | Built with ❤️ and Rust")
-                        .size(10.0)
-                        .color(self.theme.text_muted));
                 });
             });
     }

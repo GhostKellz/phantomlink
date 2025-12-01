@@ -1,0 +1,33 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE=1
+export CARGO_HOME=$(CURDIR)/debian/cargo-home
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_install:
+	install -Dm755 target/release/phantomlink debian/phantomlink/usr/bin/phantomlink
+	install -Dm644 packaging/phantomlink.desktop debian/phantomlink/usr/share/applications/phantomlink.desktop
+	# Icons
+	install -Dm644 assets/icons/icon-16x16.png debian/phantomlink/usr/share/icons/hicolor/16x16/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-32x32.png debian/phantomlink/usr/share/icons/hicolor/32x32/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-48x48.png debian/phantomlink/usr/share/icons/hicolor/48x48/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-64x64.png debian/phantomlink/usr/share/icons/hicolor/64x64/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-128x128.png debian/phantomlink/usr/share/icons/hicolor/128x128/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-256x256.png debian/phantomlink/usr/share/icons/hicolor/256x256/apps/phantomlink.png
+	install -Dm644 assets/icons/icon-512x512.png debian/phantomlink/usr/share/icons/hicolor/512x512/apps/phantomlink.png
+
+override_dh_auto_test:
+	# Tests require audio hardware, skip in build
+	:
+
+override_dh_auto_clean:
+	cargo clean || true
+	rm -rf $(CARGO_HOME)
+
+override_dh_shlibdeps:
+	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info

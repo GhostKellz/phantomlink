@@ -1,5 +1,262 @@
+//! UI Widget library for PhantomLink mixer interface.
+//!
+//! Provides professional audio-style widgets: knobs, meters, buttons, and channel strips.
+
+#![allow(dead_code)] // Widget library - components used as needed in various panels
+
 use eframe::egui;
 use crate::gui::theme::WavelinkTheme;
+
+/// Hardware-style rotary knob for gain/pan controls
+pub struct HardwareKnob {
+    value: f32,
+    min: f32,
+    max: f32,
+    label: String,
+    unit: String,
+}
+
+impl HardwareKnob {
+    pub fn new(label: &str, value: f32, min: f32, max: f32, unit: &str) -> Self {
+        Self {
+            value,
+            min,
+            max,
+            label: label.to_string(),
+            unit: unit.to_string(),
+        }
+    }
+
+    pub fn show(&mut self, ui: &mut egui::Ui, theme: &WavelinkTheme) -> egui::Response {
+        let size = egui::vec2(60.0, 80.0);
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+
+        if response.dragged() {
+            let delta = -response.drag_delta().y * 0.005;
+            self.value = (self.value + delta * (self.max - self.min)).clamp(self.min, self.max);
+        }
+
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+            let center = rect.center();
+            let knob_radius = 22.0;
+
+            // Outer ring (metallic look)
+            painter.circle_filled(center, knob_radius + 3.0, egui::Color32::from_gray(60));
+            painter.circle_stroke(center, knob_radius + 3.0, egui::Stroke::new(1.0, egui::Color32::from_gray(80)));
+
+            // Knob body with gradient effect
+            let knob_color = if response.hovered() || response.dragged() {
+                egui::Color32::from_gray(90)
+            } else {
+                egui::Color32::from_gray(70)
+            };
+            painter.circle_filled(center, knob_radius, knob_color);
+
+            // Inner shadow
+            painter.circle_stroke(center, knob_radius - 2.0, egui::Stroke::new(1.0, egui::Color32::from_gray(50)));
+
+            // Position indicator line
+            let normalized = (self.value - self.min) / (self.max - self.min);
+            let angle = std::f32::consts::PI * 0.75 + normalized * std::f32::consts::PI * 1.5;
+            let indicator_start = center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.4);
+            let indicator_end = center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.85);
+
+            painter.line_segment(
+                [indicator_start, indicator_end],
+                egui::Stroke::new(3.0, theme.accent_primary),
+            );
+
+            // Arc track (background)
+            let arc_radius = knob_radius + 8.0;
+            for i in 0..32 {
+                let t = i as f32 / 31.0;
+                let a = std::f32::consts::PI * 0.75 + t * std::f32::consts::PI * 1.5;
+                let pos = center + egui::vec2(a.cos(), a.sin()) * arc_radius;
+                let color = if t <= normalized {
+                    theme.accent_primary
+                } else {
+                    egui::Color32::from_gray(40)
+                };
+                painter.circle_filled(pos, 1.5, color);
+            }
+
+            // Label
+            painter.text(
+                egui::pos2(center.x, rect.top() + 4.0),
+                egui::Align2::CENTER_TOP,
+                &self.label,
+                egui::FontId::proportional(10.0),
+                theme.text_secondary,
+            );
+
+            // Value display
+            let value_text = if self.unit == "dB" {
+                format!("{:+.1}{}", self.value, self.unit)
+            } else {
+                format!("{:.0}{}", self.value * 100.0, self.unit)
+            };
+            painter.text(
+                egui::pos2(center.x, rect.bottom() - 4.0),
+                egui::Align2::CENTER_BOTTOM,
+                value_text,
+                egui::FontId::proportional(9.0),
+                theme.text_muted,
+            );
+        }
+
+        response
+    }
+
+    pub fn value(&self) -> f32 {
+        self.value
+    }
+
+    pub fn set_value(&mut self, v: f32) {
+        self.value = v.clamp(self.min, self.max);
+    }
+}
+
+/// Professional VU meter with peak hold
+pub struct ProfessionalMeter {
+    peak: f32,
+    rms: f32,
+    peak_hold: f32,
+    peak_hold_time: f32,
+    clip_indicator: bool,
+    clip_hold_time: f32,
+}
+
+impl Default for ProfessionalMeter {
+    fn default() -> Self {
+        Self {
+            peak: 0.0,
+            rms: 0.0,
+            peak_hold: 0.0,
+            peak_hold_time: 0.0,
+            clip_indicator: false,
+            clip_hold_time: 0.0,
+        }
+    }
+}
+
+impl ProfessionalMeter {
+    pub fn update(&mut self, peak: f32, rms: f32, dt: f32) {
+        self.peak = peak;
+        self.rms = rms;
+
+        // Peak hold with decay
+        if peak > self.peak_hold {
+            self.peak_hold = peak;
+            self.peak_hold_time = 1.5; // Hold for 1.5 seconds
+        } else if self.peak_hold_time > 0.0 {
+            self.peak_hold_time -= dt;
+        } else {
+            self.peak_hold = (self.peak_hold - dt * 0.5).max(peak);
+        }
+
+        // Clip detection
+        if peak >= 0.99 {
+            self.clip_indicator = true;
+            self.clip_hold_time = 2.0;
+        } else if self.clip_hold_time > 0.0 {
+            self.clip_hold_time -= dt;
+        } else {
+            self.clip_indicator = false;
+        }
+    }
+
+    pub fn draw(&self, ui: &mut egui::Ui, theme: &WavelinkTheme, height: f32) {
+        let width = 24.0;
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+
+        // Click to reset clip indicator
+        if response.clicked() {
+            // Would reset clip here if mutable
+        }
+
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+
+            // Background
+            painter.rect_filled(rect, egui::Rounding::same(3.0), theme.vu_meter_bg());
+
+            // Segmented meter style (like hardware)
+            let segment_height = 3.0;
+            let segment_gap = 1.0;
+            let segments = ((height - 4.0) / (segment_height + segment_gap)) as i32;
+
+            let peak_db = if self.peak > 0.0001 { 20.0 * self.peak.log10() } else { -60.0 };
+            let rms_db = if self.rms > 0.0001 { 20.0 * self.rms.log10() } else { -60.0 };
+            let hold_db = if self.peak_hold > 0.0001 { 20.0 * self.peak_hold.log10() } else { -60.0 };
+
+            let meter_rect = rect.shrink(2.0);
+
+            for i in 0..segments {
+                let segment_db = -60.0 + (i as f32 / segments as f32) * 66.0; // -60 to +6 dB range
+                let y = meter_rect.bottom() - (i as f32 + 1.0) * (segment_height + segment_gap);
+
+                let segment_rect = egui::Rect::from_min_size(
+                    egui::pos2(meter_rect.left(), y),
+                    egui::vec2(meter_rect.width(), segment_height),
+                );
+
+                // Determine segment color
+                let base_color = if segment_db > 0.0 {
+                    theme.vu_meter_red()
+                } else if segment_db > -6.0 {
+                    egui::Color32::from_rgb(255, 180, 0) // Orange
+                } else if segment_db > -18.0 {
+                    theme.vu_meter_yellow()
+                } else {
+                    theme.vu_meter_green()
+                };
+
+                let is_rms_lit = rms_db >= segment_db;
+                let is_peak_lit = peak_db >= segment_db;
+                let is_hold = (hold_db - segment_db).abs() < 2.0;
+
+                let color = if is_hold {
+                    // Peak hold indicator - bright
+                    base_color
+                } else if is_peak_lit {
+                    // Peak level - slightly dimmer
+                    egui::Color32::from_rgba_unmultiplied(
+                        base_color.r(),
+                        base_color.g(),
+                        base_color.b(),
+                        200,
+                    )
+                } else if is_rms_lit {
+                    // RMS level - dimmer
+                    egui::Color32::from_rgba_unmultiplied(
+                        base_color.r(),
+                        base_color.g(),
+                        base_color.b(),
+                        140,
+                    )
+                } else {
+                    // Off segment
+                    egui::Color32::from_gray(35)
+                };
+
+                painter.rect_filled(segment_rect, egui::Rounding::same(1.0), color);
+            }
+
+            // Clip indicator at top
+            let clip_rect = egui::Rect::from_min_size(
+                egui::pos2(meter_rect.left(), meter_rect.top()),
+                egui::vec2(meter_rect.width(), 4.0),
+            );
+            let clip_color = if self.clip_indicator {
+                egui::Color32::from_rgb(255, 0, 0)
+            } else {
+                egui::Color32::from_gray(50)
+            };
+            painter.rect_filled(clip_rect, egui::Rounding::same(1.0), clip_color);
+        }
+    }
+}
 
 pub struct ModernChannelStrip {
     pub volume: f32,
@@ -9,6 +266,8 @@ pub struct ModernChannelStrip {
     pub solo: bool,
     pub selected_vst: Option<usize>,
     pub levels: [f32; 2], // [peak, rms]
+    pub meter: ProfessionalMeter,
+    pub gain_knob: HardwareKnob,
 }
 
 impl ModernChannelStrip {
@@ -21,6 +280,8 @@ impl ModernChannelStrip {
             solo: false,
             selected_vst: None,
             levels: [0.0, 0.0],
+            meter: ProfessionalMeter::default(),
+            gain_knob: HardwareKnob::new("GAIN", 0.0, -20.0, 20.0, "dB"),
         }
     }
     
@@ -33,96 +294,97 @@ impl ModernChannelStrip {
         vst_plugin_info: &[crate::phantomlink::VstPluginInfo],
     ) -> ChannelStripResponse {
         let mut response = ChannelStripResponse::default();
-        
-        // Channel strip container with modern translucent styling
+
+        // Update meter with current levels
+        self.meter.update(self.levels[0], self.levels[1], 0.016); // ~60fps
+
+        // Channel strip container - Wavelink XLR style
         egui::Frame::none()
             .fill(theme.channel_strip_bg())
-            .stroke(egui::Stroke::new(1.5, theme.channel_strip_border()))
-            .rounding(egui::Rounding::same(16.0))  // More rounded for modern look
-            .inner_margin(egui::Margin::same(16.0))  // More padding for touch
+            .stroke(egui::Stroke::new(1.5, if self.solo {
+                theme.accent_secondary
+            } else if self.muted {
+                theme.error.linear_multiply(0.5)
+            } else {
+                theme.channel_strip_border()
+            }))
+            .rounding(egui::Rounding::same(12.0))
+            .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
-                ui.set_min_width(160.0);  // Wider for touch
-                ui.set_max_width(180.0);
-                
-                // Channel header with modern typography
+                ui.set_min_width(140.0);
+                ui.set_max_width(160.0);
+
+                // Channel header - XLR style with icon
                 ui.vertical_centered(|ui| {
+                    let icon = if channel_name.contains("MIC") { "🎤" } else { "🎸" };
+                    ui.label(
+                        egui::RichText::new(icon)
+                            .size(20.0)
+                    );
                     ui.label(
                         egui::RichText::new(channel_name)
-                            .size(16.0)  // Larger text for touch
+                            .size(14.0)
                             .strong()
-                            .color(theme.green_primary)  // Green accent
+                            .color(if self.muted {
+                                theme.text_muted
+                            } else {
+                                theme.accent_primary
+                            })
                     );
                 });
-                
+
                 ui.add_space(8.0);
-                
-                // VU Meter - Modern vertical style
-                self.draw_modern_vu_meter(ui, theme);
-                
-                ui.add_space(12.0);
-                
-                // Gain control with modern styling
-                ui.label(
-                    egui::RichText::new("GAIN")
-                        .size(11.0)
-                        .strong()
-                        .color(theme.text_secondary)
-                );
-                
-                let gain_response = ui.add_sized(
-                    [ui.available_width(), 100.0],  // Taller for easier touch control
-                    egui::Slider::new(&mut self.gain, -20.0..=20.0)
-                        .suffix(" dB")
-                        .show_value(true)
-                        .vertical()
-                );
-                
-                if gain_response.changed() {
-                    response.gain_changed = true;
-                }
-                
-                ui.add_space(12.0);
-                
-                // Pan control with larger size
-                ui.label(
-                    egui::RichText::new("PAN")
-                        .size(11.0)
-                        .strong()
-                        .color(theme.text_secondary)
-                );
-                
-                let pan_response = ui.add_sized(
-                    [ui.available_width(), 30.0],  // Taller for touch
-                    egui::Slider::new(&mut self.pan, -1.0..=1.0)
-                        .show_value(false)
-                );
-                
-                if pan_response.changed() {
-                    response.pan_changed = true;
-                }
-                
-                ui.add_space(12.0);
-                
-                // Volume fader - Wavelink style with more height
-                ui.label(
-                    egui::RichText::new("VOLUME")
-                        .size(11.0)
-                        .strong()
-                        .color(theme.text_secondary)
-                );
-                
-                let volume_response = ui.add_sized(
-                    [ui.available_width(), 120.0],  // Taller for better control
-                    egui::Slider::new(&mut self.volume, 0.0..=1.0)
-                        .show_value(false)
-                        .vertical()
-                );
-                
-                if volume_response.changed() {
-                    response.volume_changed = true;
-                }
-                
-                ui.add_space(12.0);
+
+                // Main content: Meter + Controls side by side
+                ui.horizontal(|ui| {
+                    // Professional VU Meter (left side)
+                    self.meter.draw(ui, theme, 180.0);
+
+                    ui.add_space(8.0);
+
+                    // Controls column (right side)
+                    ui.vertical(|ui| {
+                        // Hardware-style gain knob
+                        self.gain_knob.set_value(self.gain);
+                        if self.gain_knob.show(ui, theme).changed() {
+                            self.gain = self.gain_knob.value();
+                            response.gain_changed = true;
+                        }
+
+                        ui.add_space(4.0);
+
+                        // Pan indicator (centered dot style)
+                        self.draw_pan_indicator(ui, theme);
+                        let pan_response = ui.add_sized(
+                            [60.0, 20.0],
+                            egui::Slider::new(&mut self.pan, -1.0..=1.0)
+                                .show_value(false)
+                        );
+                        if pan_response.changed() {
+                            response.pan_changed = true;
+                        }
+
+                        ui.add_space(8.0);
+
+                        // Volume fader (vertical, Wavelink style)
+                        ui.label(
+                            egui::RichText::new("VOL")
+                                .size(9.0)
+                                .color(theme.text_secondary)
+                        );
+                        let volume_response = ui.add_sized(
+                            [40.0, 60.0],
+                            egui::Slider::new(&mut self.volume, 0.0..=1.0)
+                                .show_value(false)
+                                .vertical()
+                        );
+                        if volume_response.changed() {
+                            response.volume_changed = true;
+                        }
+                    });
+                });
+
+                ui.add_space(8.0);
                 
                 // VST Plugin selection with modern dropdown
                 ui.label(
@@ -198,101 +460,46 @@ impl ModernChannelStrip {
         response
     }
     
-    fn draw_modern_vu_meter(&self, ui: &mut egui::Ui, theme: &WavelinkTheme) {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 60.0), egui::Sense::hover());
-        
+    fn draw_pan_indicator(&self, ui: &mut egui::Ui, theme: &WavelinkTheme) {
+        let size = egui::vec2(60.0, 16.0);
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            
-            // Background
-            painter.rect_filled(
-                rect,
-                egui::Rounding::same(4.0),
-                theme.vu_meter_bg(),
+
+            // Background track
+            painter.rect_filled(rect, egui::Rounding::same(3.0), theme.bg_highlight);
+
+            // Center line
+            let center_x = rect.center().x;
+            painter.line_segment(
+                [egui::pos2(center_x, rect.top() + 2.0), egui::pos2(center_x, rect.bottom() - 2.0)],
+                egui::Stroke::new(1.0, theme.text_muted),
             );
-            
-            // Border
-            painter.rect_stroke(
-                rect,
-                egui::Rounding::same(4.0),
-                egui::Stroke::new(1.0, theme.light_blue),
+
+            // Pan position indicator
+            let pan_x = rect.center().x + self.pan * (rect.width() * 0.4);
+            painter.circle_filled(
+                egui::pos2(pan_x, rect.center().y),
+                5.0,
+                theme.accent_primary,
             );
-            
-            // Calculate levels in dB
-            let peak_db = if self.levels[0] > 0.0001 {
-                20.0 * self.levels[0].log10().max(-60.0)
-            } else {
-                -60.0
-            };
-            
-            let rms_db = if self.levels[1] > 0.0001 {
-                20.0 * self.levels[1].log10().max(-60.0)
-            } else {
-                -60.0
-            };
-            
-            // Normalize to 0-1 range (-60dB to 0dB)
-            let peak_norm = ((peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
-            let rms_norm = ((rms_db + 60.0) / 60.0).clamp(0.0, 1.0);
-            
-            let meter_rect = rect.shrink(2.0);
-            let peak_height = meter_rect.height() * peak_norm;
-            let rms_height = meter_rect.height() * rms_norm;
-            
-            // RMS level (background)
-            if rms_norm > 0.0 {
-                let rms_rect = egui::Rect::from_min_size(
-                    egui::pos2(meter_rect.left(), meter_rect.bottom() - rms_height),
-                    egui::vec2(meter_rect.width() * 0.6, rms_height),
-                );
-                
-                let rms_color = if rms_db > -6.0 {
-                    theme.vu_meter_red()
-                } else if rms_db > -18.0 {
-                    theme.vu_meter_yellow()
-                } else {
-                    theme.vu_meter_green()
-                };
-                
-                painter.rect_filled(rms_rect, egui::Rounding::same(2.0), rms_color);
-            }
-            
-            // Peak level (foreground)
-            if peak_norm > 0.0 {
-                let peak_rect = egui::Rect::from_min_size(
-                    egui::pos2(meter_rect.right() - meter_rect.width() * 0.3, meter_rect.bottom() - peak_height),
-                    egui::vec2(meter_rect.width() * 0.3, peak_height),
-                );
-                
-                let peak_color = if peak_db > -6.0 {
-                    theme.vu_meter_red()
-                } else if peak_db > -18.0 {
-                    theme.vu_meter_yellow()
-                } else {
-                    theme.vu_meter_green()
-                };
-                
-                painter.rect_filled(peak_rect, egui::Rounding::same(2.0), peak_color);
-            }
-            
-            // dB scale markers
-            for &db in &[-60, -40, -20, -6, 0] {
-                let y_pos = meter_rect.bottom() - (meter_rect.height() * ((db + 60) as f32 / 60.0));
-                painter.line_segment(
-                    [egui::pos2(meter_rect.right() + 2.0, y_pos), egui::pos2(meter_rect.right() + 6.0, y_pos)],
-                    egui::Stroke::new(1.0, theme.text_muted),
-                );
-                
-                if db == 0 || db == -20 || db == -40 {
-                    painter.text(
-                        egui::pos2(meter_rect.right() + 8.0, y_pos - 6.0),
-                        egui::Align2::LEFT_CENTER,
-                        format!("{}", db),
-                        egui::FontId::proportional(8.0),
-                        theme.text_muted,
-                    );
-                }
-            }
+
+            // L/R labels
+            painter.text(
+                egui::pos2(rect.left() + 4.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                "L",
+                egui::FontId::proportional(8.0),
+                theme.text_muted,
+            );
+            painter.text(
+                egui::pos2(rect.right() - 4.0, rect.center().y),
+                egui::Align2::RIGHT_CENTER,
+                "R",
+                egui::FontId::proportional(8.0),
+                theme.text_muted,
+            );
         }
     }
 }

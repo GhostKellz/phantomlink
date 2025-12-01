@@ -258,7 +258,7 @@ impl MixerPanel {
                 ui.end_row();
                 
                 // Output rows
-                for (output_idx, output) in self.outputs.iter_mut().enumerate() {
+                for (_output_idx, output) in self.outputs.iter_mut().enumerate() {
                     ui.label(&output.name);
                     
                     for channel_idx in 0..channel_names.len() {
@@ -350,6 +350,8 @@ impl MixerPanel {
         });
     }
     
+    /// Get the routing level for a specific channel to an output
+    #[allow(dead_code)] // API for external routing control
     pub fn get_channel_output_level(&self, channel_idx: usize, output_idx: usize) -> f32 {
         if output_idx < self.outputs.len() {
             self.outputs[output_idx].channels.get(&channel_idx).copied().unwrap_or(0.0)
@@ -357,7 +359,9 @@ impl MixerPanel {
             0.0
         }
     }
-    
+
+    /// Check if an output is enabled
+    #[allow(dead_code)] // API for external routing control
     pub fn is_output_enabled(&self, output_idx: usize) -> bool {
         if output_idx < self.outputs.len() {
             self.outputs[output_idx].enabled

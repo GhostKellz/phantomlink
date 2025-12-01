@@ -22,6 +22,8 @@ impl Rnnoise {
         }
     }
 
+    /// Disable noise suppression and clean up resources
+    #[allow(dead_code)] // API for toggling noise suppression
     pub fn disable(&mut self) {
         self.enabled = false;
         // Clean up denoiser when disabled

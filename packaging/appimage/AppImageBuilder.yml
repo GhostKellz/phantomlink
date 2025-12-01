@@ -1,0 +1,40 @@
+version: 1
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: sh.ghostkellz.phantomlink
+    name: PhantomLink
+    icon: phantomlink
+    version: 0.2.0
+    exec: usr/bin/phantomlink
+
+  apt:
+    arch: amd64
+    sources:
+      - sourceline: 'deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse'
+        key_url: 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3b4fe6acc0b21f32'
+
+    include:
+      - libasound2
+      - libpipewire-0.3-0
+      - libgtk-3-0
+      - libxkbcommon0
+      - libxcb1
+
+  files:
+    include:
+      - usr/bin/phantomlink
+      - usr/share/applications/phantomlink.desktop
+      - usr/share/icons/hicolor/256x256/apps/phantomlink.png
+      - usr/share/icons/hicolor/scalable/apps/phantomlink.svg
+
+  runtime:
+    env:
+      APPDIR_LIBRARY_PATH: $APPDIR/usr/lib/x86_64-linux-gnu:$APPDIR/lib/x86_64-linux-gnu
+
+AppImage:
+  update-information: gh-releases-zsync|ghostkellz|phantomlink|latest|PhantomLink-*x86_64.AppImage.zsync
+  sign-key: None
+  arch: x86_64

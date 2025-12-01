@@ -21,16 +21,17 @@ num-complex = "0.4"
 rand = "0.8"
 glam = "0.24"
 log = "0.4"
+toml = "0.8"
 
-# Ghostwave integration for RTX noise suppression
-# Note: Currently has build issues, integrating as optional feature
-# ghostwave-core = { git = "https://github.com/ghostkellz/ghostwave", features = ["pipewire-backend", "alsa-backend"], optional = true }
+# GhostWave integration for RTX AI noise suppression
+# Enables full RTX 5090 Blackwell FP4 Tensor Core acceleration
+ghostwave-core = { path = "../ghostwave/ghostwave-core", optional = true, features = [
+    "nvidia-rtx",
+    "onnx-inference",
+    "cpal-backend"
+] }
 
 [features]
-default = []
-ghostwave = []  # Feature flag for Ghostwave integration when it's ready
-
-# Advanced AI denoising dependencies (optional for future use)
-# candle-core = { version = "0.9", optional = true }
-# candle-onnx = { version = "0.9", optional = true }
-# tflitec = { version = "0.6", optional = true }
+default = ["ghostwave", "rtx"]
+ghostwave = ["ghostwave-core"]
+rtx = ["ghostwave-core"]

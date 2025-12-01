@@ -1,13 +1,17 @@
+//! Audio visualization components - spectrum analyzer and VU meters.
+
 use realfft::{RealFftPlanner, RealToComplex};
 use num_complex::Complex;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use eframe::egui;
 
+/// Real-time spectrum analyzer using FFT
 pub struct SpectrumAnalyzer {
     fft: Arc<dyn RealToComplex<f32>>,
     buffer: Vec<f32>,
     spectrum: Vec<f32>,
     window: Vec<f32>,
+    #[allow(dead_code)] // Stored for frequency bin calculations
     sample_rate: f32,
 }
 
@@ -61,6 +65,8 @@ impl SpectrumAnalyzer {
         &self.spectrum
     }
     
+    /// Get frequency values for each spectrum bin (Hz)
+    #[allow(dead_code)] // API for frequency axis labeling
     pub fn get_frequency_bins(&self) -> Vec<f32> {
         (0..self.spectrum.len())
             .map(|i| i as f32 * self.sample_rate / (2.0 * self.spectrum.len() as f32))

@@ -359,17 +359,19 @@ impl ApplicationManager {
         }
     }
     
+    /// Get the effective volume for an application (0.0 if muted)
+    #[allow(dead_code)] // API for audio routing integration
     pub fn get_application_volume(&self, process_name: &str) -> f32 {
         for app in &self.applications {
             if app.process_name == process_name {
                 return if app.muted { 0.0 } else { app.volume };
             }
         }
-        
+
         if let Some(app) = self.detected_apps.get(process_name) {
             return if app.muted { 0.0 } else { app.volume };
         }
-        
+
         1.0
     }
 }

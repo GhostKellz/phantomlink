@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=PhantomLink
+GenericName=Audio Mixer
+Comment=Professional audio mixer with RTX AI noise suppression
+Exec=phantomlink
+Icon=phantomlink
+Terminal=false
+Type=Application
+Categories=Audio;AudioVideo;Mixer;
+Keywords=audio;mixer;streaming;podcast;noise;suppression;rtx;scarlett;focusrite;
+StartupWMClass=phantomlink
+StartupNotify=true

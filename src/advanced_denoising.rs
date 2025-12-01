@@ -1,3 +1,7 @@
+//! Advanced noise suppression system with multiple denoising backends.
+
+#![allow(dead_code)] // Complete denoising API with multiple backends
+
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
 

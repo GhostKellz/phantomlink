@@ -6,26 +6,28 @@ use crate::rnnoise::Rnnoise;
 use crate::vst_host::VstProcessor;
 use crate::gui::visualizer::{SpectrumAnalyzer, VUMeter};
 use crate::advanced_denoising::{
-    AdvancedDenoisingSystem, AdvancedDenoisingConfig, DenoisingMode,
-    AdvancedDenoiser, SharedAdvancedDenoiser, create_advanced_denoiser
+    AdvancedDenoisingConfig, DenoisingMode,
+    SharedAdvancedDenoiser, create_advanced_denoiser
 };
 use crate::ghostwave_integration::{
-    GhostwaveProcessor, PhantomLinkProfile, NvidiaOpenDriverIntegration
+    GhostWaveIntegration, PhantomLinkProfile, detect_nvidia_driver
 };
 use crossbeam_channel::{Receiver, Sender};
-use std::time::Instant;
 use anyhow::Result;
 
 const BUFFER_SIZE: usize = 1024;
 const CHANNEL_COUNT: usize = 4;
 
+/// Audio channel processor with volume, effects, and metering
 pub struct ChannelProcessor {
     pub volume: f32,
     pub muted: bool,
     pub vst_processor: Option<VstProcessor>,
     pub gain: f32,
     pub pan: f32,
+    #[allow(dead_code)] // Solo functionality for future mixer implementation
     pub solo: bool,
+    #[allow(dead_code)] // Internal buffer for VST processing
     buffer: Vec<f32>,
     vu_meter: VUMeter,
     last_levels: [f32; 2], // Store last peak/rms levels
@@ -160,6 +162,7 @@ impl ChannelProcessor {
     }
 }
 
+/// Main audio processing engine with denoising and GhostWave integration
 pub struct AudioEngine {
     input_stream: Option<Stream>,
     output_stream: Option<Stream>,
@@ -168,12 +171,16 @@ pub struct AudioEngine {
     advanced_denoiser: Option<SharedAdvancedDenoiser>,
     spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>>,
     spectrum_data: Arc<Mutex<Vec<f32>>>,
+    #[allow(dead_code)] // For future inter-thread audio routing
     audio_sender: Option<Sender<Vec<f32>>>,
+    #[allow(dead_code)] // For future inter-thread audio routing
     audio_receiver: Option<Receiver<Vec<f32>>>,
-    // Ghostwave Integration
-    ghostwave_processor: Option<Arc<Mutex<GhostwaveProcessor>>>,
-    nvidia_integration: Option<NvidiaOpenDriverIntegration>,
+    // GhostWave Integration
+    #[allow(dead_code)] // GhostWave integration for RTX denoising
+    ghostwave: Option<Arc<Mutex<GhostWaveIntegration>>>,
+    #[allow(dead_code)] // GhostWave enable flag
     use_ghostwave: bool,
+    #[allow(dead_code)] // Current GhostWave processing profile
     current_profile: PhantomLinkProfile,
 }
 
@@ -204,16 +211,15 @@ impl AudioEngine {
             }
         };
         
-        // Initialize Ghostwave integration
-        let (ghostwave_processor, nvidia_integration) = match GhostwaveProcessor::new() {
-            Ok(processor) => {
-                log::info!("Ghostwave initialized successfully");
-                let nvidia = NvidiaOpenDriverIntegration::new().ok();
-                (Some(Arc::new(Mutex::new(processor))), nvidia)
+        // Initialize GhostWave integration
+        let ghostwave = match GhostWaveIntegration::new() {
+            Ok(gw) => {
+                log::info!("GhostWave initialized successfully");
+                Some(Arc::new(Mutex::new(gw)))
             }
             Err(e) => {
-                log::warn!("Failed to initialize Ghostwave: {}, falling back to traditional processing", e);
-                (None, None)
+                log::warn!("Failed to initialize GhostWave: {}, falling back to traditional processing", e);
+                None
             }
         };
 
@@ -227,13 +233,14 @@ impl AudioEngine {
             spectrum_data,
             audio_sender: Some(audio_sender),
             audio_receiver: Some(audio_receiver),
-            use_ghostwave: ghostwave_processor.is_some(),
-            ghostwave_processor,
-            nvidia_integration,
+            use_ghostwave: ghostwave.is_some(),
+            ghostwave,
             current_profile: PhantomLinkProfile::Balanced,
         }
     }
     
+    /// Update channel volume and mute state
+    #[allow(dead_code)] // API for GUI channel control
     pub fn update_channel(&self, channel_idx: usize, volume: f32, muted: bool) {
         if let Ok(mut channels) = self.channels.lock() {
             if let Some(channel) = channels.get_mut(channel_idx) {
@@ -242,7 +249,9 @@ impl AudioEngine {
             }
         }
     }
-    
+
+    /// Enable or disable legacy RNNoise denoising
+    #[allow(dead_code)] // API for noise suppression toggle
     pub fn set_rnnoise_enabled(&self, enabled: bool) {
         if let Ok(mut rnnoise) = self.rnnoise.lock() {
             if enabled {
@@ -263,6 +272,8 @@ impl AudioEngine {
         Ok(())
     }
     
+    /// Get current denoising mode
+    #[allow(dead_code)] // API for denoising settings UI
     pub fn get_denoising_mode(&self) -> Option<DenoisingMode> {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(d) = denoiser.lock() {
@@ -271,7 +282,8 @@ impl AudioEngine {
         }
         None
     }
-    
+
+    /// Enable or disable advanced denoising
     pub fn set_advanced_denoising_enabled(&self, enabled: bool) {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(mut d) = denoiser.lock() {
@@ -279,7 +291,9 @@ impl AudioEngine {
             }
         }
     }
-    
+
+    /// Check if advanced denoising is currently active
+    #[allow(dead_code)] // API for status display
     pub fn is_advanced_denoising_enabled(&self) -> bool {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(d) = denoiser.lock() {
@@ -288,7 +302,8 @@ impl AudioEngine {
         }
         false
     }
-    
+
+    /// Get denoising metrics for display
     pub fn get_denoising_metrics(&self) -> Option<crate::advanced_denoising::DenoisingMetrics> {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(d) = denoiser.lock() {
@@ -297,10 +312,12 @@ impl AudioEngine {
         }
         None
     }
-    
+
+    /// Get list of available denoising modes
+    #[allow(dead_code)] // API for mode selector UI
     pub fn get_available_denoising_modes(&self) -> Vec<DenoisingMode> {
         if let Some(ref denoiser) = self.advanced_denoiser {
-            if let Ok(d) = denoiser.lock() {
+            if denoiser.lock().is_ok() {
                 // Return basic modes since we can't downcast the trait object
                 return vec![
                     DenoisingMode::Basic,
@@ -335,14 +352,10 @@ impl AudioEngine {
         let spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>> = Arc::clone(&self.spectrum_analyzer);
         let spectrum_data: Arc<Mutex<Vec<f32>>> = Arc::clone(&self.spectrum_data);
         
-        let start_time = Instant::now();
-        
         // Input stream: capture and process audio
         let input_stream = input_device.build_input_stream(
             &input_config,
             move |data: &[f32], _| {
-                let dt = start_time.elapsed().as_secs_f32() % 1.0; // Frame time for VU meters
-                
                 // Process input through all channels and mix
                 let mut mixed_output = vec![0.0; data.len()];
                 let mut total_levels = [0.0f32; 2];
@@ -444,71 +457,77 @@ impl AudioEngine {
         println!("Audio engine stopped");
     }
 
+    /// Check if audio streams are running
+    #[allow(dead_code)] // API for status display
     pub fn is_running(&self) -> bool {
         self.input_stream.is_some() && self.output_stream.is_some()
     }
 
-    // Ghostwave-specific methods
+    // GhostWave-specific methods
+
+    /// Enable or disable GhostWave RTX denoising
+    #[allow(dead_code)] // API for GhostWave settings
     pub fn set_ghostwave_enabled(&mut self, enabled: bool) {
-        self.use_ghostwave = enabled && self.ghostwave_processor.is_some();
+        self.use_ghostwave = enabled && self.ghostwave.is_some();
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(mut g) = gw.lock() {
+                g.set_enabled(enabled);
+            }
+        }
     }
 
+    /// Check if GhostWave is enabled
+    #[allow(dead_code)] // API for status display
     pub fn is_ghostwave_enabled(&self) -> bool {
         self.use_ghostwave
     }
 
+    /// Set GhostWave processing profile
+    #[allow(dead_code)] // API for GhostWave settings
     pub fn set_ghostwave_profile(&mut self, profile: PhantomLinkProfile) {
         self.current_profile = profile;
-        if let Some(processor) = &self.ghostwave_processor {
-            if let Ok(mut proc) = processor.lock() {
-                let config = self.current_profile.to_ghostwave_config();
-                // TODO: Apply new configuration to processor
-                log::info!("Applied Ghostwave profile: {:?}", self.current_profile);
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(mut g) = gw.lock() {
+                if let Err(e) = g.set_profile(profile) {
+                    log::warn!("Failed to set GhostWave profile: {}", e);
+                } else {
+                    log::info!("Applied GhostWave profile: {:?}", profile);
+                }
             }
         }
     }
 
+    /// Get current GhostWave processing latency
+    #[allow(dead_code)] // API for latency monitoring
     pub fn get_ghostwave_latency(&self) -> f32 {
-        if let Some(processor) = &self.ghostwave_processor {
-            if let Ok(proc) = processor.lock() {
-                return proc.get_latency();
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(g) = gw.lock() {
+                return g.get_metrics().latency_ms;
             }
         }
         0.0
     }
 
-    pub fn get_gpu_usage(&self) -> f32 {
-        if let Some(processor) = &self.ghostwave_processor {
-            if let Ok(proc) = processor.lock() {
-                return proc.get_gpu_usage();
-            }
-        }
-        0.0
-    }
-
-    pub fn get_gpu_memory_usage(&self) -> (usize, usize) {
-        if let Some(processor) = &self.ghostwave_processor {
-            if let Ok(proc) = processor.lock() {
-                return proc.get_gpu_memory();
-            }
-        }
-        (0, 0)
-    }
-
+    /// Check if RTX acceleration is active
+    #[allow(dead_code)] // API for status display
     pub fn is_rtx_active(&self) -> bool {
-        if let Some(processor) = &self.ghostwave_processor {
-            if let Ok(proc) = processor.lock() {
-                return proc.is_rtx_active();
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(g) = gw.lock() {
+                return g.is_rtx_active();
             }
         }
         false
     }
 
+    /// Get NVIDIA GPU name for display
+    #[allow(dead_code)] // API for hardware info display
     pub fn get_nvidia_gpu_name(&self) -> String {
-        if let Some(nvidia) = &self.nvidia_integration {
-            return nvidia.get_gpu_name();
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(g) = gw.lock() {
+                return g.get_rtx_status().gpu_name.clone();
+            }
         }
-        "No NVIDIA GPU detected".to_string()
+        detect_nvidia_driver().gpu_name
     }
 
     pub fn get_channel_levels(&self, channel_idx: usize) -> Option<[f32; 2]> {
@@ -520,6 +539,8 @@ impl AudioEngine {
         None
     }
 
+    /// Set VST plugin for a channel
+    #[allow(dead_code)] // API for VST plugin management
     pub fn set_channel_vst(&self, channel_idx: usize, vst_processor: Option<VstProcessor>) {
         if let Ok(mut channels) = self.channels.lock() {
             if let Some(channel) = channels.get_mut(channel_idx) {
@@ -527,11 +548,13 @@ impl AudioEngine {
             }
         }
     }
-    
+
+    /// Get shared spectrum data for visualization
+    #[allow(dead_code)] // API for spectrum analyzer panel
     pub fn get_spectrum_data(&self) -> Arc<Mutex<Vec<f32>>> {
         self.spectrum_data.clone()
     }
-    
+
     /// Get spectrum data as a simple Vec for GUI display
     pub fn get_spectrum_data_vec(&self) -> Option<Vec<f32>> {
         if let Ok(data) = self.spectrum_data.lock() {
@@ -545,7 +568,9 @@ impl AudioEngine {
             None
         }
     }
-    
+
+    /// Update channel with full parameter set
+    #[allow(dead_code)] // API for advanced channel control
     pub fn update_channel_advanced(&self, channel_idx: usize, volume: f32, muted: bool, gain: f32, pan: f32) {
         if let Ok(mut channels) = self.channels.lock() {
             if let Some(channel) = channels.get_mut(channel_idx) {

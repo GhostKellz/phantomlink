@@ -8,8 +8,9 @@
 #![allow(dead_code)] // Complete denoising API with multiple backends
 
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "deep-learning")]
 use std::path::PathBuf;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use realfft::{RealFftPlanner, RealToComplex, ComplexToReal};
 use num_complex::Complex32;
 

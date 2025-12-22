@@ -607,15 +607,15 @@ pub struct ChannelStripResponse {
 pub struct ModernButton;
 
 impl ModernButton {
-    pub fn primary(text: &str) -> egui::Button {
+    pub fn primary(text: &str) -> egui::Button<'_> {
         egui::Button::new(
             egui::RichText::new(text)
                 .size(16.0)  // Larger text
                 .strong()
         ).min_size(egui::vec2(140.0, 44.0))  // Larger touch target
     }
-    
-    pub fn secondary(text: &str) -> egui::Button {
+
+    pub fn secondary(text: &str) -> egui::Button<'_> {
         egui::Button::new(
             egui::RichText::new(text)
                 .size(14.0)  // Larger text

@@ -10,7 +10,6 @@
 //! Connect via Unix socket at `/run/user/<uid>/phantomlink.sock` or
 //! `/tmp/phantomlink.sock` as fallback.
 
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -23,8 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioEngine;
 use crate::ghostwave_integration::{
-    DenoiseQuality, GhostWaveIntegration, LatencyMode, PhantomLinkProfile, RtxStatus,
-    StatusHealth,
+    GhostWaveIntegration, LatencyMode, PhantomLinkProfile,
 };
 
 /// JSON-RPC request structure

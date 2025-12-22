@@ -9,12 +9,12 @@
 #![allow(dead_code)] // Complete VST hosting API for plugin management
 
 use vst::host::{Host, PluginLoader, PluginInstance};
-use vst::plugin::{Plugin, Category, PluginParameters};
+use vst::plugin::{Plugin, Category};
 use vst::api::Events;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::collections::HashMap;
-use crossbeam_channel::{Sender, Receiver, bounded, TrySendError};
+use crossbeam_channel::{Sender, Receiver, bounded};
 
 pub struct VstHost {
     plugin_id: i32,
@@ -271,7 +271,7 @@ impl VstProcessor {
     fn process_audio_with_plugin(
         plugin: &mut PluginInstance,
         input: &[f32],
-        buffer_size: usize
+        _buffer_size: usize
     ) -> Vec<f32> {
         if input.is_empty() {
             return Vec::new();
@@ -286,7 +286,7 @@ impl VstProcessor {
         let frame_count = input.len() / num_inputs.max(1);
 
         // Create input buffers (deinterleaved)
-        let mut input_buffers: Vec<Vec<f32>> = (0..num_inputs)
+        let input_buffers: Vec<Vec<f32>> = (0..num_inputs)
             .map(|ch| {
                 (0..frame_count)
                     .map(|frame| {

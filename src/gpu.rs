@@ -9,8 +9,8 @@
 
 use anyhow::{Context, Result};
 use libloading::{Library, Symbol};
-use std::ffi::{c_int, c_void, CStr};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::ffi::{c_int, CStr};
+use std::sync::{Mutex, OnceLock};
 
 /// GPU architecture generation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

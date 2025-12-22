@@ -8,6 +8,124 @@ use serde::{Deserialize, Serialize};
 
 const CONFIG_FILE_NAME: &str = "phantomlink_config.json";
 
+/// Professional microphone presets with optimized settings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MicrophonePreset {
+    /// Rode PodMic - Dynamic, needs moderate gain, warm sound
+    #[default]
+    RodePodMic,
+    /// Shure SM7B - Dynamic, needs high gain (60dB+), broadcast quality
+    ShureSM7B,
+    /// Rode Podcaster - Dynamic USB/XLR, balanced output
+    RodePodcaster,
+    /// Rode NT1 - Condenser, very low noise, high sensitivity
+    RodeNT1,
+    /// Audio-Technica AT2020 - Condenser, versatile
+    AT2020,
+    /// Scarlett Solo Gen 4 default (generic dynamic)
+    ScarlettDefault,
+    /// Custom user settings
+    Custom,
+}
+
+impl MicrophonePreset {
+    /// Get display name
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::RodePodMic => "Rode PodMic",
+            Self::ShureSM7B => "Shure SM7B",
+            Self::RodePodcaster => "Rode Podcaster",
+            Self::RodeNT1 => "Rode NT1",
+            Self::AT2020 => "AT2020",
+            Self::ScarlettDefault => "Generic",
+            Self::Custom => "Custom",
+        }
+    }
+
+    /// Get description
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::RodePodMic => "Dynamic broadcast mic, warm tone, moderate gain",
+            Self::ShureSM7B => "Dynamic broadcast legend, needs high gain (CloudLifter recommended)",
+            Self::RodePodcaster => "Dynamic USB/XLR hybrid, balanced output",
+            Self::RodeNT1 => "Ultra-low noise condenser, very sensitive",
+            Self::AT2020 => "Versatile condenser, good all-rounder",
+            Self::ScarlettDefault => "Default settings for generic dynamic mics",
+            Self::Custom => "Custom user-defined settings",
+        }
+    }
+
+    /// Recommended preamp gain in dB (for Scarlett Solo)
+    pub fn recommended_gain_db(&self) -> f32 {
+        match self {
+            Self::RodePodMic => 45.0,      // Moderate gain, efficient dynamic
+            Self::ShureSM7B => 60.0,       // Needs lots of gain, low output
+            Self::RodePodcaster => 35.0,   // Higher output dynamic
+            Self::RodeNT1 => 25.0,         // Very sensitive condenser
+            Self::AT2020 => 30.0,          // Moderate sensitivity condenser
+            Self::ScarlettDefault => 40.0, // Middle ground
+            Self::Custom => 40.0,
+        }
+    }
+
+    /// Recommended noise gate threshold in dB
+    pub fn gate_threshold_db(&self) -> f32 {
+        match self {
+            Self::RodePodMic => -45.0,      // Dynamic rejects noise well
+            Self::ShureSM7B => -50.0,       // Very noise-rejecting
+            Self::RodePodcaster => -45.0,
+            Self::RodeNT1 => -55.0,         // Very low noise floor
+            Self::AT2020 => -50.0,
+            Self::ScarlettDefault => -40.0,
+            Self::Custom => -40.0,
+        }
+    }
+
+    /// Recommended compressor threshold in dB
+    pub fn compressor_threshold_db(&self) -> f32 {
+        match self {
+            Self::RodePodMic => -20.0,
+            Self::ShureSM7B => -18.0,       // Broadcast standard
+            Self::RodePodcaster => -20.0,
+            Self::RodeNT1 => -24.0,         // Wider dynamic range
+            Self::AT2020 => -22.0,
+            Self::ScarlettDefault => -18.0,
+            Self::Custom => -18.0,
+        }
+    }
+
+    /// Recommended compressor ratio
+    pub fn compressor_ratio(&self) -> f32 {
+        match self {
+            Self::RodePodMic => 3.0,
+            Self::ShureSM7B => 4.0,         // Broadcast standard 4:1
+            Self::RodePodcaster => 3.5,
+            Self::RodeNT1 => 2.5,           // Gentle for vocals
+            Self::AT2020 => 3.0,
+            Self::ScarlettDefault => 4.0,
+            Self::Custom => 4.0,
+        }
+    }
+
+    /// Whether phantom power is typically needed (condensers)
+    pub fn needs_phantom_power(&self) -> bool {
+        matches!(self, Self::RodeNT1 | Self::AT2020)
+    }
+
+    /// Get all available presets
+    pub fn all() -> &'static [MicrophonePreset] {
+        &[
+            Self::RodePodMic,
+            Self::ShureSM7B,
+            Self::RodePodcaster,
+            Self::RodeNT1,
+            Self::AT2020,
+            Self::ScarlettDefault,
+            Self::Custom,
+        ]
+    }
+}
+
 /// GhostWave v0.2.0 configuration
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct GhostWaveConfig {

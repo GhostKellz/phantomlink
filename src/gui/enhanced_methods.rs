@@ -1,6 +1,7 @@
 // Additional methods for the enhanced PhantomlinkApp
 use eframe::egui;
 use crate::gui::theme::{WavelinkTheme, ThemePreset};
+use crate::config::MicrophonePreset;
 use crate::gui::widgets::{enhanced_glow_button, GlowButtonStyle};
 use crate::gui::NotificationLevel;
 use crate::gui::MainTab;
@@ -362,6 +363,109 @@ impl super::PhantomlinkApp {
                     ui.separator();
                     ui.add_space(12.0);
 
+                    // Microphone preset selector
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("🎤")
+                            .size(18.0)
+                            .color(self.theme.accent_secondary));
+                        ui.label(egui::RichText::new("Microphone Preset:")
+                            .size(14.0)
+                            .color(self.theme.text_primary));
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Microphone preset grid - 2 columns
+                    egui::Grid::new("mic_preset_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 6.0])
+                        .show(ui, |ui| {
+                            for (i, preset) in MicrophonePreset::all().iter().enumerate() {
+                                let is_selected = self.microphone_preset == *preset;
+                                let button_text = preset.name();
+
+                                let button = egui::Button::new(
+                                    egui::RichText::new(button_text)
+                                        .size(11.0)
+                                        .color(if is_selected {
+                                            self.theme.bg_dark
+                                        } else {
+                                            self.theme.text_primary
+                                        })
+                                )
+                                .fill(if is_selected {
+                                    self.theme.accent_secondary
+                                } else {
+                                    self.theme.card_bg
+                                })
+                                .stroke(egui::Stroke::new(
+                                    if is_selected { 2.0 } else { 1.0 },
+                                    if is_selected { self.theme.accent_glow } else { self.theme.bg_highlight }
+                                ))
+                                .rounding(egui::Rounding::same(6.0))
+                                .min_size(egui::Vec2::new(100.0, 28.0));
+
+                                if ui.add(button)
+                                    .on_hover_text(preset.description())
+                                    .clicked() && !is_selected
+                                {
+                                    self.microphone_preset = *preset;
+
+                                    // Show recommended settings
+                                    let msg = format!(
+                                        "{}: Gain ~{}dB, Gate {}dB",
+                                        preset.name(),
+                                        preset.recommended_gain_db() as i32,
+                                        preset.gate_threshold_db() as i32
+                                    );
+                                    self.add_notification(&msg, NotificationLevel::Info);
+
+                                    // Warn about phantom power for condensers
+                                    if preset.needs_phantom_power() {
+                                        self.add_notification(
+                                            "Enable 48V phantom power for this microphone",
+                                            NotificationLevel::Warning
+                                        );
+                                    }
+                                }
+
+                                if (i + 1) % 2 == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+
+                    // Show current preset info
+                    ui.add_space(8.0);
+                    egui::Frame::none()
+                        .fill(self.theme.bg_highlight)
+                        .rounding(egui::Rounding::same(6.0))
+                        .inner_margin(egui::Margin::same(8.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Recommended:")
+                                    .size(11.0)
+                                    .color(self.theme.text_muted));
+                                ui.label(egui::RichText::new(
+                                    format!("Gain: {}dB", self.microphone_preset.recommended_gain_db() as i32)
+                                ).size(11.0).color(self.theme.success));
+                                ui.label(egui::RichText::new("|").color(self.theme.text_muted));
+                                ui.label(egui::RichText::new(
+                                    format!("Gate: {}dB", self.microphone_preset.gate_threshold_db() as i32)
+                                ).size(11.0).color(self.theme.info));
+                                if self.microphone_preset.needs_phantom_power() {
+                                    ui.label(egui::RichText::new("|").color(self.theme.text_muted));
+                                    ui.label(egui::RichText::new("48V")
+                                        .size(11.0)
+                                        .color(self.theme.warning));
+                                }
+                            });
+                        });
+
+                    ui.add_space(16.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+
                     // Interface settings
                     ui.label(egui::RichText::new("Interface Options:")
                         .size(14.0)
@@ -403,6 +507,7 @@ impl super::PhantomlinkApp {
 
                             if ui.add(button).on_hover_text(preset.description()).clicked() {
                                 self.pipewire_preset = *preset;
+                                self.use_custom_buffer = false; // Reset custom buffer when selecting preset
                                 self.add_notification(
                                     &format!("Audio preset: {} ({})", preset.name(), preset.buffer_size()),
                                     NotificationLevel::Info
@@ -413,15 +518,75 @@ impl super::PhantomlinkApp {
 
                     ui.add_space(12.0);
 
-                    // Audio settings (dynamic based on preset)
+                    // Custom buffer size control
+                    ui.checkbox(&mut self.use_custom_buffer, "Use custom buffer size");
+
+                    if self.use_custom_buffer {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label("Buffer Size:");
+
+                            // Buffer size slider (powers of 2: 64, 128, 256, 512, 1024, 2048)
+                            let buffer_options = [64u32, 128, 256, 512, 1024, 2048];
+                            let current_idx = buffer_options.iter()
+                                .position(|&b| b == self.custom_buffer_size)
+                                .unwrap_or(2); // Default to 256
+
+                            let mut slider_val = current_idx as f32;
+                            let slider = egui::Slider::new(&mut slider_val, 0.0..=5.0)
+                                .step_by(1.0)
+                                .custom_formatter(|v, _| {
+                                    let idx = v.round() as usize;
+                                    format!("{} samples", buffer_options.get(idx).unwrap_or(&256))
+                                });
+
+                            if ui.add(slider).changed() {
+                                let new_idx = slider_val.round() as usize;
+                                if let Some(&new_size) = buffer_options.get(new_idx) {
+                                    self.custom_buffer_size = new_size;
+                                    let latency_ms = (new_size as f32 / 48000.0) * 1000.0;
+                                    self.add_notification(
+                                        &format!("Buffer: {} samples (~{:.1}ms)", new_size, latency_ms),
+                                        NotificationLevel::Info
+                                    );
+                                }
+                            }
+                        });
+
+                        // Show latency estimate
+                        let latency_ms = (self.custom_buffer_size as f32 / 48000.0) * 1000.0;
+                        let latency_color = if latency_ms < 6.0 {
+                            self.theme.success
+                        } else if latency_ms < 15.0 {
+                            self.theme.warning
+                        } else {
+                            self.theme.info
+                        };
+                        ui.label(egui::RichText::new(format!("Latency: ~{:.1}ms", latency_ms))
+                            .size(11.0)
+                            .color(latency_color));
+                    }
+
+                    ui.add_space(12.0);
+
+                    // Audio settings (dynamic based on preset or custom)
                     ui.label(egui::RichText::new("Audio Engine:")
                         .size(14.0)
                         .color(self.theme.text_primary));
 
                     ui.add_space(4.0);
 
-                    let buffer_size = self.pipewire_preset.buffer_size();
-                    let latency_ms = self.pipewire_preset.latency_ms();
+                    // Use custom buffer size if enabled, otherwise use preset
+                    let buffer_size = if self.use_custom_buffer {
+                        self.custom_buffer_size
+                    } else {
+                        self.pipewire_preset.buffer_size()
+                    };
+                    let latency_ms = if self.use_custom_buffer {
+                        (self.custom_buffer_size as f32 / 48000.0) * 1000.0
+                    } else {
+                        self.pipewire_preset.latency_ms()
+                    };
 
                     egui::Grid::new("audio_info")
                         .num_columns(2)

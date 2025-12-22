@@ -11,6 +11,7 @@ use crate::phantomlink;
 use crate::scarlett::{ScarlettSolo, AirMode, InputLevel, CaptureSource, LevelMeters};
 use crate::audio::AudioEngine;
 use crate::gui::theme::{WavelinkTheme, ThemePreset};
+use crate::config::MicrophonePreset;
 use crate::gui::widgets::{ModernChannelStrip, StatusIndicator, enhanced_glow_button, GlowButtonStyle};
 use crate::gui::applications::ApplicationManager;
 use crate::gui::mixer::MixerPanel;
@@ -102,6 +103,11 @@ pub struct PhantomlinkApp {
     mute_all: bool,
     // PipeWire audio preset
     pipewire_preset: enhanced_methods::PipeWirePreset,
+    // Custom buffer size control
+    custom_buffer_size: u32,
+    use_custom_buffer: bool,
+    // Microphone preset
+    microphone_preset: MicrophonePreset,
     // PipeWire virtual device manager
     pipewire_device: Option<crate::pipewire::VirtualDeviceManager>,
     #[allow(dead_code)] // State tracking for PipeWire device status
@@ -185,6 +191,11 @@ impl Default for PhantomlinkApp {
             master_volume: 0.8,
             mute_all: false,
             pipewire_preset: enhanced_methods::PipeWirePreset::default(),
+            // Custom buffer size control
+            custom_buffer_size: 256,
+            use_custom_buffer: false,
+            // Microphone preset (default to Rode PodMic)
+            microphone_preset: MicrophonePreset::default(),
             // Initialize PipeWire virtual device manager
             pipewire_device: if crate::pipewire::is_pipewire_running() {
                 let mut mgr = crate::pipewire::VirtualDeviceManager::default();

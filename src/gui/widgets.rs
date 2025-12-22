@@ -258,6 +258,23 @@ impl ProfessionalMeter {
     }
 }
 
+/// Hardware telemetry data for mixer strip overlay
+#[derive(Debug, Clone, Default)]
+pub struct ChannelTelemetry {
+    /// Processing latency in milliseconds
+    pub latency_ms: f32,
+    /// CPU usage percentage (0.0-100.0)
+    pub cpu_percent: f32,
+    /// Buffer underruns/xruns
+    pub xruns: u32,
+    /// GhostWave processing active
+    pub ghostwave_active: bool,
+    /// RTX acceleration active
+    pub rtx_active: bool,
+    /// VST processing active
+    pub vst_active: bool,
+}
+
 pub struct ModernChannelStrip {
     pub volume: f32,
     pub gain: f32,
@@ -268,6 +285,8 @@ pub struct ModernChannelStrip {
     pub levels: [f32; 2], // [peak, rms]
     pub meter: ProfessionalMeter,
     pub gain_knob: HardwareKnob,
+    pub telemetry: ChannelTelemetry,
+    pub show_telemetry: bool,
 }
 
 impl ModernChannelStrip {
@@ -282,6 +301,8 @@ impl ModernChannelStrip {
             levels: [0.0, 0.0],
             meter: ProfessionalMeter::default(),
             gain_knob: HardwareKnob::new("GAIN", 0.0, -20.0, 20.0, "dB"),
+            telemetry: ChannelTelemetry::default(),
+            show_telemetry: true, // Show by default
         }
     }
     
@@ -447,17 +468,86 @@ impl ModernChannelStrip {
                         self.muted = !self.muted;
                         response.mute_changed = true;
                     }
-                    
+
                     ui.add_space(4.0);
-                    
+
                     if ui.add(status_toggle_button("SOLO", self.solo, theme, StatusButtonType::Solo)).clicked() {
                         self.solo = !self.solo;
                         response.solo_changed = true;
                     }
                 });
+
+                // Hardware telemetry overlay (collapsible)
+                if self.show_telemetry {
+                    ui.add_space(6.0);
+                    self.draw_telemetry_overlay(ui, theme);
+                }
             });
-        
+
         response
+    }
+
+    /// Draw the hardware telemetry overlay at the bottom of the channel strip
+    fn draw_telemetry_overlay(&self, ui: &mut egui::Ui, theme: &WavelinkTheme) {
+        let tel = &self.telemetry;
+
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgba_premultiplied(0, 0, 0, 100))
+            .rounding(egui::Rounding::same(4.0))
+            .inner_margin(egui::Margin::same(4.0))
+            .show(ui, |ui| {
+                ui.style_mut().spacing.item_spacing.y = 2.0;
+
+                // Latency indicator
+                ui.horizontal(|ui| {
+                    let lat_color = if tel.latency_ms < 5.0 {
+                        theme.success
+                    } else if tel.latency_ms < 15.0 {
+                        theme.warning
+                    } else {
+                        theme.error
+                    };
+                    ui.label(egui::RichText::new(format!("{:.1}ms", tel.latency_ms))
+                        .size(9.0)
+                        .color(lat_color));
+
+                    // XRun indicator
+                    if tel.xruns > 0 {
+                        ui.label(egui::RichText::new(format!("x{}", tel.xruns))
+                            .size(8.0)
+                            .color(theme.error));
+                    }
+                });
+
+                // Processing indicators
+                ui.horizontal(|ui| {
+                    // GhostWave indicator
+                    if tel.ghostwave_active {
+                        let gw_color = if tel.rtx_active {
+                            theme.success // RTX active = green
+                        } else {
+                            theme.warning // CPU fallback = yellow
+                        };
+                        ui.label(egui::RichText::new("GW")
+                            .size(8.0)
+                            .color(gw_color));
+                    }
+
+                    // RTX indicator
+                    if tel.rtx_active {
+                        ui.label(egui::RichText::new("RTX")
+                            .size(8.0)
+                            .color(theme.accent_secondary));
+                    }
+
+                    // VST indicator
+                    if tel.vst_active {
+                        ui.label(egui::RichText::new("VST")
+                            .size(8.0)
+                            .color(theme.info));
+                    }
+                });
+            });
     }
     
     fn draw_pan_indicator(&self, ui: &mut egui::Ui, theme: &WavelinkTheme) {

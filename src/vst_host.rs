@@ -1,16 +1,20 @@
 //! VST2 Plugin hosting for audio effects and instruments.
+//!
+//! Provides full VST2 plugin hosting with:
+//! - Plugin loading and initialization
+//! - Real-time parameter control via message passing
+//! - Thread-safe audio processing
+//! - Plugin scanning and cataloging
 
 #![allow(dead_code)] // Complete VST hosting API for plugin management
 
 use vst::host::{Host, PluginLoader, PluginInstance};
-use vst::plugin::{Plugin, Category};
-#[allow(unused_imports)]
-use vst::buffer::AudioBuffer;
+use vst::plugin::{Plugin, Category, PluginParameters};
 use vst::api::Events;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::collections::HashMap;
-use crossbeam_channel::{Sender, bounded};
+use crossbeam_channel::{Sender, Receiver, bounded, TrySendError};
 
 pub struct VstHost {
     plugin_id: i32,
@@ -59,13 +63,54 @@ impl Host for VstHost {
 
 }
 
+/// Message types for VST processor thread communication
+#[derive(Debug)]
+enum VstMessage {
+    /// Process audio buffer and return result
+    ProcessAudio {
+        input: Vec<f32>,
+        response: Sender<Vec<f32>>,
+    },
+    /// Set a parameter value
+    SetParameter {
+        index: i32,
+        value: f32,
+    },
+    /// Get parameter info (name, display value)
+    GetParameterInfo {
+        index: i32,
+        response: Sender<Option<ParameterInfo>>,
+    },
+    /// Request all parameter values
+    GetAllParameters {
+        response: Sender<HashMap<i32, f32>>,
+    },
+    /// Set enabled state
+    SetEnabled {
+        enabled: bool,
+    },
+    /// Shutdown the processor
+    Shutdown,
+}
+
+/// Parameter information returned from VST plugin
+#[derive(Debug, Clone)]
+pub struct ParameterInfo {
+    pub index: i32,
+    pub name: String,
+    pub label: String,
+    pub value: f32,
+    pub display: String,
+}
+
 pub struct VstProcessor {
     plugin_name: String,
     plugin_path: PathBuf,
     enabled: bool,
     parameters: HashMap<i32, f32>,
-    // Audio processing channels
-    audio_sender: Option<Sender<(Vec<f32>, Sender<Vec<f32>>)>>,
+    parameter_count: i32,
+    // Message channel to processing thread
+    message_sender: Option<Sender<VstMessage>>,
     processing_thread: Option<std::thread::JoinHandle<()>>,
     sample_rate: f32,
     buffer_size: usize,
@@ -79,132 +124,347 @@ impl VstProcessor {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        
+
         let sample_rate = 48000.0;
         let buffer_size = 1024;
-        
-        let (audio_sender, audio_receiver) = bounded::<(Vec<f32>, Sender<Vec<f32>>)>(16);
-        
+
+        // Create message channel with reasonable buffer
+        let (message_sender, message_receiver) = bounded::<VstMessage>(64);
+
         // Clone the path for the thread
         let plugin_path_clone = plugin_path.clone();
-        
+
+        // Get parameter count by loading plugin temporarily
+        let parameter_count = Self::query_parameter_count(&plugin_path_clone)?;
+
         // Start the processing thread
         let processing_thread = std::thread::spawn(move || {
-            // Load the VST plugin in the processing thread
-            if let Ok(mut plugin_instance) = Self::load_plugin_instance(&plugin_path_clone, sample_rate, buffer_size) {
-                // Process audio in the thread
-                while let Ok((input_audio, response_sender)) = audio_receiver.recv() {
-                    let processed_audio = Self::process_audio_with_plugin(&mut plugin_instance, &input_audio, buffer_size);
-                    let _ = response_sender.send(processed_audio);
-                }
-            } else {
-                // If plugin loading failed, just pass through audio
-                while let Ok((input_audio, response_sender)) = audio_receiver.recv() {
-                    let _ = response_sender.send(input_audio);
-                }
-            }
+            Self::processor_thread_main(plugin_path_clone, sample_rate, buffer_size, message_receiver);
         });
-        
+
+        // Initialize default parameter values
+        let mut parameters = HashMap::new();
+        for i in 0..parameter_count {
+            parameters.insert(i, 0.5); // Default to 50%
+        }
+
         Ok(Self {
             plugin_name,
             plugin_path: plugin_path.clone(),
             enabled: true,
-            parameters: HashMap::new(),
-            audio_sender: Some(audio_sender),
+            parameters,
+            parameter_count,
+            message_sender: Some(message_sender),
             processing_thread: Some(processing_thread),
             sample_rate,
             buffer_size,
         })
     }
-    
+
+    /// Get parameter count from plugin without keeping it loaded
+    fn query_parameter_count(plugin_path: &PathBuf) -> Result<i32, Box<dyn std::error::Error>> {
+        let host = Arc::new(Mutex::new(VstHost::new()));
+        let mut loader = PluginLoader::load(plugin_path, host)?;
+        let plugin_instance = loader.instance()?;
+        let info = plugin_instance.get_info();
+        Ok(info.parameters)
+    }
+
+    /// Main loop for the processor thread
+    fn processor_thread_main(
+        plugin_path: PathBuf,
+        sample_rate: f32,
+        buffer_size: usize,
+        message_receiver: Receiver<VstMessage>,
+    ) {
+        // Load the VST plugin in the processing thread
+        let plugin_result = Self::load_plugin_instance(&plugin_path, sample_rate, buffer_size);
+
+        match plugin_result {
+            Ok(mut plugin_instance) => {
+                let mut enabled = true;
+                let info = plugin_instance.get_info();
+                let param_count = info.parameters;
+
+                // Get parameter object for accessing/setting parameters
+                let params = plugin_instance.get_parameter_object();
+
+                // Process messages in the thread
+                while let Ok(message) = message_receiver.recv() {
+                    match message {
+                        VstMessage::ProcessAudio { input, response } => {
+                            let output = if enabled {
+                                Self::process_audio_with_plugin(&mut plugin_instance, &input, buffer_size)
+                            } else {
+                                input
+                            };
+                            let _ = response.send(output);
+                        }
+                        VstMessage::SetParameter { index, value } => {
+                            // Clamp value to 0.0-1.0 range (VST standard)
+                            let clamped = value.clamp(0.0, 1.0);
+                            params.set_parameter(index, clamped);
+                        }
+                        VstMessage::GetParameterInfo { index, response } => {
+                            if index >= 0 && index < param_count {
+                                let info = ParameterInfo {
+                                    index,
+                                    name: params.get_parameter_name(index),
+                                    label: params.get_parameter_label(index),
+                                    value: params.get_parameter(index),
+                                    display: params.get_parameter_text(index),
+                                };
+                                let _ = response.send(Some(info));
+                            } else {
+                                let _ = response.send(None);
+                            }
+                        }
+                        VstMessage::GetAllParameters { response } => {
+                            let mut param_values = HashMap::new();
+                            for i in 0..param_count {
+                                param_values.insert(i, params.get_parameter(i));
+                            }
+                            let _ = response.send(param_values);
+                        }
+                        VstMessage::SetEnabled { enabled: e } => {
+                            enabled = e;
+                        }
+                        VstMessage::Shutdown => {
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load VST plugin: {}", e);
+                // If plugin loading failed, just handle audio passthrough
+                while let Ok(message) = message_receiver.recv() {
+                    match message {
+                        VstMessage::ProcessAudio { input, response } => {
+                            let _ = response.send(input);
+                        }
+                        VstMessage::Shutdown => break,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
     fn load_plugin_instance(
-        plugin_path: &PathBuf, 
-        sample_rate: f32, 
+        plugin_path: &PathBuf,
+        sample_rate: f32,
         buffer_size: usize
     ) -> Result<PluginInstance, Box<dyn std::error::Error>> {
         let host = Arc::new(Mutex::new(VstHost::new()));
         let mut loader = PluginLoader::load(plugin_path, host)?;
         let mut plugin_instance = loader.instance()?;
-        
+
         // Initialize the plugin
         plugin_instance.set_sample_rate(sample_rate);
         plugin_instance.set_block_size(buffer_size as i64);
         plugin_instance.resume();
-        
+
         Ok(plugin_instance)
     }
-    
+
     fn process_audio_with_plugin(
-        _plugin: &mut PluginInstance,
+        plugin: &mut PluginInstance,
         input: &[f32],
-        _buffer_size: usize
+        buffer_size: usize
     ) -> Vec<f32> {
-        // For now, do basic processing since VST processing is complex
-        // In a production implementation, you'd use proper VST buffer management
         if input.is_empty() {
             return Vec::new();
         }
-        
-        // Simple passthrough with basic processing simulation
-        // Real VST processing would require proper buffer setup and threading
-        let mut output = input.to_vec();
-        
-        // Apply a simple effect to show VST is "processing"
-        // This is just a placeholder - real VST processing would be much more complex
-        for sample in &mut output {
-            *sample *= 0.9; // Slight volume reduction to show processing
+
+        // Get plugin channel configuration
+        let info = plugin.get_info();
+        let num_inputs = info.inputs.max(1) as usize;
+        let num_outputs = info.outputs.max(1) as usize;
+
+        // Determine actual frame count
+        let frame_count = input.len() / num_inputs.max(1);
+
+        // Create input buffers (deinterleaved)
+        let mut input_buffers: Vec<Vec<f32>> = (0..num_inputs)
+            .map(|ch| {
+                (0..frame_count)
+                    .map(|frame| {
+                        let idx = frame * num_inputs + ch;
+                        if idx < input.len() {
+                            input[idx]
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Create output buffers
+        let mut output_buffers: Vec<Vec<f32>> = (0..num_outputs)
+            .map(|_| vec![0.0; frame_count])
+            .collect();
+
+        // Convert to raw pointers for VST AudioBuffer API
+        let input_ptrs: Vec<*const f32> = input_buffers.iter().map(|b| b.as_ptr()).collect();
+        let mut output_ptrs: Vec<*mut f32> = output_buffers.iter_mut().map(|b| b.as_mut_ptr()).collect();
+
+        // Create AudioBuffer from raw pointers and process
+        // Safety: pointers are valid for the duration of this function call
+        unsafe {
+            let mut audio_buffer = vst::buffer::AudioBuffer::from_raw(
+                num_inputs,
+                num_outputs,
+                input_ptrs.as_ptr(),
+                output_ptrs.as_mut_ptr(),
+                frame_count,
+            );
+            plugin.process(&mut audio_buffer);
         }
-        
+
+        // Interleave output back to single buffer
+        let mut output = Vec::with_capacity(frame_count * num_outputs);
+        for frame in 0..frame_count {
+            for ch in 0..num_outputs {
+                output.push(output_buffers[ch][frame]);
+            }
+        }
+
         output
     }
-    
+
     pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
         if !self.enabled || input.is_empty() {
             return input.to_vec();
         }
-        
-        if let Some(ref audio_sender) = self.audio_sender {
+
+        if let Some(ref sender) = self.message_sender {
             let (response_sender, response_receiver) = bounded(1);
-            
+
+            let message = VstMessage::ProcessAudio {
+                input: input.to_vec(),
+                response: response_sender,
+            };
+
             // Send audio for processing
-            if audio_sender.try_send((input.to_vec(), response_sender)).is_ok() {
+            if sender.try_send(message).is_ok() {
                 // Try to get the result with a timeout
                 if let Ok(processed_audio) = response_receiver.recv_timeout(std::time::Duration::from_millis(10)) {
                     return processed_audio;
                 }
             }
         }
-        
+
         // Fallback: return original audio if processing fails or times out
         input.to_vec()
     }
-    
+
     pub fn get_plugin_name(&self) -> String {
         self.plugin_name.clone()
     }
-    
+
+    /// Set a parameter value (0.0 - 1.0 range)
+    /// This properly sends the parameter change to the VST processing thread
     pub fn set_parameter(&mut self, index: i32, value: f32) {
-        self.parameters.insert(index, value);
-        // TODO: Send parameter change to processing thread
+        let clamped = value.clamp(0.0, 1.0);
+        self.parameters.insert(index, clamped);
+
+        // Send parameter change to processing thread
+        if let Some(ref sender) = self.message_sender {
+            let _ = sender.try_send(VstMessage::SetParameter {
+                index,
+                value: clamped,
+            });
+        }
     }
-    
+
+    /// Get cached parameter value
     pub fn get_parameter(&self, index: i32) -> f32 {
         self.parameters.get(&index).copied().unwrap_or(0.0)
     }
-    
+
+    /// Get parameter info from the actual VST plugin (blocking)
+    pub fn get_parameter_info(&self, index: i32) -> Option<ParameterInfo> {
+        if let Some(ref sender) = self.message_sender {
+            let (response_sender, response_receiver) = bounded(1);
+
+            let message = VstMessage::GetParameterInfo {
+                index,
+                response: response_sender,
+            };
+
+            if sender.try_send(message).is_ok() {
+                if let Ok(info) = response_receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+                    return info;
+                }
+            }
+        }
+        None
+    }
+
+    /// Get all parameter values from the VST plugin (blocking)
+    pub fn get_all_parameters(&self) -> HashMap<i32, f32> {
+        if let Some(ref sender) = self.message_sender {
+            let (response_sender, response_receiver) = bounded(1);
+
+            let message = VstMessage::GetAllParameters {
+                response: response_sender,
+            };
+
+            if sender.try_send(message).is_ok() {
+                if let Ok(params) = response_receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+                    return params;
+                }
+            }
+        }
+        self.parameters.clone()
+    }
+
+    /// Sync local parameter cache with actual VST values
+    pub fn sync_parameters(&mut self) {
+        let params = self.get_all_parameters();
+        self.parameters = params;
+    }
+
+    /// Get number of parameters
+    pub fn get_parameter_count(&self) -> i32 {
+        self.parameter_count
+    }
+
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
+
+        // Notify processing thread
+        if let Some(ref sender) = self.message_sender {
+            let _ = sender.try_send(VstMessage::SetEnabled { enabled });
+        }
     }
-    
+
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    /// Get the sample rate
+    pub fn get_sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    /// Get the buffer size
+    pub fn get_buffer_size(&self) -> usize {
+        self.buffer_size
     }
 }
 
 impl Drop for VstProcessor {
     fn drop(&mut self) {
+        // Send shutdown message
+        if let Some(ref sender) = self.message_sender {
+            let _ = sender.send(VstMessage::Shutdown);
+        }
+
         // Clean up the processing thread
-        self.audio_sender.take();
+        self.message_sender.take();
         if let Some(thread) = self.processing_thread.take() {
             let _ = thread.join();
         }

@@ -7,6 +7,11 @@
 //! - Direct Monitoring
 //! - Internal mixer routing
 //! - Level metering
+//!
+//! ## USB Device Information
+//! - Vendor ID: 0x1235 (Focusrite Audio Engineering)
+//! - Product ID: 0x8218 (Scarlett Solo 4th Gen)
+//! - Class: Audio (01)
 
 #![allow(dead_code)] // Complete Scarlett hardware API - methods used as needed
 
@@ -14,6 +19,33 @@ use alsa::ctl::Ctl;
 use alsa::mixer::{Mixer, SelemId};
 use std::process::Command;
 use anyhow::{Result, Context, anyhow};
+
+/// Focusrite USB Vendor ID
+pub const FOCUSRITE_VID: u16 = 0x1235;
+
+/// Scarlett Solo 4th Gen Product ID
+pub const SCARLETT_SOLO_4G_PID: u16 = 0x8218;
+
+/// Scarlett 2i2 4th Gen Product ID (for reference)
+pub const SCARLETT_2I2_4G_PID: u16 = 0x8210;
+
+/// ALSA control names for Scarlett Solo 4th Gen
+pub mod controls {
+    /// Phantom Power for XLR input (Input 2)
+    pub const PHANTOM_POWER: &str = "Line In 2 Phantom Power";
+    /// Air mode (Off/Presence/Presence+Drive)
+    pub const AIR_MODE: &str = "Line In 2 Air";
+    /// Input level (Line/Inst)
+    pub const INPUT_LEVEL: &str = "Line In 1 Level";
+    /// Direct monitoring switch
+    pub const DIRECT_MONITOR: &str = "Direct Monitor";
+    /// Sync status
+    pub const SYNC_STATUS: &str = "Sync Status";
+    /// PCM input mode (Direct/Mixer)
+    pub const PCM_INPUT_MODE: &str = "PCM Input";
+    /// Level meter numid
+    pub const LEVEL_METER_NUMID: &str = "numid=46";
+}
 
 /// Air mode for the microphone input (Input 2 / XLR)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -813,6 +845,84 @@ pub struct DspRouting {
     pub mix_b: [f32; 4],
 }
 
+/// USB device information for Focusrite devices
+#[derive(Debug, Clone, Default)]
+pub struct UsbDeviceInfo {
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub bus: u8,
+    pub device: u8,
+    pub name: String,
+    pub serial: Option<String>,
+}
+
+/// Detect Focusrite Scarlett USB devices using lsusb
+pub fn detect_focusrite_usb() -> Vec<UsbDeviceInfo> {
+    let output = Command::new("lsusb")
+        .arg("-d")
+        .arg(format!("{:04x}:", FOCUSRITE_VID))
+        .output();
+
+    let mut devices = Vec::new();
+
+    if let Ok(output) = output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            // Parse: "Bus 001 Device 012: ID 1235:8218 Focusrite-Novation Scarlett Solo 4th Gen"
+            if let Some(info) = parse_lsusb_line(line) {
+                devices.push(info);
+            }
+        }
+    }
+
+    devices
+}
+
+fn parse_lsusb_line(line: &str) -> Option<UsbDeviceInfo> {
+    // Format: "Bus XXX Device YYY: ID VVVV:PPPP Description"
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 7 {
+        return None;
+    }
+
+    let bus = parts.get(1)?.parse().ok()?;
+    let device = parts.get(3)?.trim_end_matches(':').parse().ok()?;
+
+    let id_part = parts.get(5)?;
+    let id_parts: Vec<&str> = id_part.split(':').collect();
+    if id_parts.len() != 2 {
+        return None;
+    }
+
+    let vendor_id = u16::from_str_radix(id_parts[0], 16).ok()?;
+    let product_id = u16::from_str_radix(id_parts[1], 16).ok()?;
+
+    let name = parts[6..].join(" ");
+
+    Some(UsbDeviceInfo {
+        vendor_id,
+        product_id,
+        bus,
+        device,
+        name,
+        serial: None,
+    })
+}
+
+/// Check if Scarlett Solo 4th Gen is connected via USB
+pub fn is_scarlett_solo_connected() -> bool {
+    detect_focusrite_usb()
+        .iter()
+        .any(|d| d.product_id == SCARLETT_SOLO_4G_PID)
+}
+
+/// Get Scarlett Solo 4th Gen USB info
+pub fn get_scarlett_solo_usb_info() -> Option<UsbDeviceInfo> {
+    detect_focusrite_usb()
+        .into_iter()
+        .find(|d| d.product_id == SCARLETT_SOLO_4G_PID)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,5 +943,24 @@ mod tests {
         assert_eq!(ScarlettSolo::db_to_alsa_volume(-80.0), 0);
         assert_eq!(ScarlettSolo::db_to_alsa_volume(0.0), 160);
         assert_eq!(ScarlettSolo::db_to_alsa_volume(12.0), 184);
+    }
+
+    #[test]
+    fn test_lsusb_parsing() {
+        let line = "Bus 001 Device 012: ID 1235:8218 Focusrite-Novation Scarlett Solo 4th Gen";
+        let info = parse_lsusb_line(line).unwrap();
+
+        assert_eq!(info.vendor_id, FOCUSRITE_VID);
+        assert_eq!(info.product_id, SCARLETT_SOLO_4G_PID);
+        assert_eq!(info.bus, 1);
+        assert_eq!(info.device, 12);
+        assert!(info.name.contains("Scarlett Solo"));
+    }
+
+    #[test]
+    fn test_usb_constants() {
+        // Verify USB VID/PID constants are correct
+        assert_eq!(FOCUSRITE_VID, 0x1235);
+        assert_eq!(SCARLETT_SOLO_4G_PID, 0x8218);
     }
 }

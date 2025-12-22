@@ -29,8 +29,12 @@ pub enum ThemePreset {
     CatppuccinFrappe,
     /// Dracula - Classic purple dark theme
     Dracula,
+    /// Nord - Arctic, north-bluish color palette
+    Nord,
     /// Scarlett - Focusrite-inspired red/crimson theme
     Scarlett,
+    /// Scarlett Solo - Focusrite Scarlett Solo 4th Gen hardware theme
+    ScarlettSolo,
     /// Wavelink - Original professional green theme
     Wavelink,
 }
@@ -45,7 +49,9 @@ impl ThemePreset {
             Self::CatppuccinMacchiato => "Catppuccin Macchiato",
             Self::CatppuccinFrappe => "Catppuccin Frappe",
             Self::Dracula => "Dracula",
+            Self::Nord => "Nord",
             Self::Scarlett => "Scarlett",
+            Self::ScarlettSolo => "Scarlett Solo",
             Self::Wavelink => "Wavelink Pro",
         }
     }
@@ -59,7 +65,9 @@ impl ThemePreset {
             Self::CatppuccinMacchiato,
             Self::CatppuccinFrappe,
             Self::Dracula,
+            Self::Nord,
             Self::Scarlett,
+            Self::ScarlettSolo,
             Self::Wavelink,
         ]
     }
@@ -129,7 +137,9 @@ impl WavelinkTheme {
             ThemePreset::CatppuccinMacchiato => Self::catppuccin_macchiato(),
             ThemePreset::CatppuccinFrappe => Self::catppuccin_frappe(),
             ThemePreset::Dracula => Self::dracula(),
+            ThemePreset::Nord => Self::nord(),
             ThemePreset::Scarlett => Self::scarlett(),
+            ThemePreset::ScarlettSolo => Self::scarlett_solo(),
             ThemePreset::Wavelink => Self::wavelink(),
         }
     }
@@ -490,6 +500,132 @@ impl WavelinkTheme {
             vu_green: egui::Color32::from_rgb(0x4a, 0xb8, 0x6a),
             vu_yellow: egui::Color32::from_rgb(0xf0, 0xa0, 0x50),
             vu_red: egui::Color32::from_rgb(0xdc, 0x14, 0x3c),  // Scarlett red
+        }
+    }
+
+    /// Nord - Arctic, north-bluish color palette
+    /// Based on https://www.nordtheme.com/
+    pub fn nord() -> Self {
+        // Nord Polar Night (backgrounds)
+        // nord0 #2e3440, nord1 #3b4252, nord2 #434c5e, nord3 #4c566a
+        // Nord Snow Storm (text)
+        // nord4 #d8dee9, nord5 #e5e9f0, nord6 #eceff4
+        // Nord Frost (accents)
+        // nord7 #8fbcbb, nord8 #88c0d0, nord9 #81a1c1, nord10 #5e81ac
+        // Nord Aurora (status)
+        // nord11 #bf616a (red), nord12 #d08770 (orange), nord13 #ebcb8b (yellow)
+        // nord14 #a3be8c (green), nord15 #b48ead (purple)
+        Self {
+            preset: ThemePreset::Nord,
+
+            // Backgrounds - Polar Night
+            bg: egui::Color32::from_rgb(0x2e, 0x34, 0x40),           // nord0 #2e3440
+            bg_dark: egui::Color32::from_rgb(0x24, 0x29, 0x33),      // Darker than nord0
+            bg_highlight: egui::Color32::from_rgb(0x3b, 0x42, 0x52), // nord1 #3b4252
+            panel_bg: egui::Color32::from_rgb(0x2e, 0x34, 0x40),     // nord0
+            card_bg: egui::Color32::from_rgb(0x3b, 0x42, 0x52),      // nord1
+            input_bg: egui::Color32::from_rgb(0x43, 0x4c, 0x5e),     // nord2 #434c5e
+
+            // Primary accent - Frost (blue tones)
+            accent_primary: egui::Color32::from_rgb(0x88, 0xc0, 0xd0),   // nord8 #88c0d0 (cyan-ish)
+            accent_secondary: egui::Color32::from_rgb(0x81, 0xa1, 0xc1), // nord9 #81a1c1 (blue)
+            accent_glow: egui::Color32::from_rgb(0x8f, 0xbc, 0xbb),      // nord7 #8fbcbb (teal)
+
+            // Secondary accents
+            blue: egui::Color32::from_rgb(0x5e, 0x81, 0xac),     // nord10 #5e81ac
+            cyan: egui::Color32::from_rgb(0x88, 0xc0, 0xd0),     // nord8
+            purple: egui::Color32::from_rgb(0xb4, 0x8e, 0xad),   // nord15 #b48ead
+            magenta: egui::Color32::from_rgb(0xb4, 0x8e, 0xad),  // nord15
+
+            // Legacy - Map to polar night
+            deep_blue: egui::Color32::from_rgb(0x24, 0x29, 0x33),
+            medium_blue: egui::Color32::from_rgb(0x2e, 0x34, 0x40),
+            light_blue: egui::Color32::from_rgb(0x4c, 0x56, 0x6a),     // nord3
+            green_primary: egui::Color32::from_rgb(0xa3, 0xbe, 0x8c),   // nord14 #a3be8c
+            green_secondary: egui::Color32::from_rgb(0x8f, 0xbc, 0xbb), // nord7
+            green_glow: egui::Color32::from_rgb(0x88, 0xc0, 0xd0),
+            background: egui::Color32::from_rgb(0x2e, 0x34, 0x40),
+
+            // Text - Snow Storm
+            text_primary: egui::Color32::from_rgb(0xec, 0xef, 0xf4),   // nord6 #eceff4
+            text_secondary: egui::Color32::from_rgb(0xd8, 0xde, 0xe9), // nord4 #d8dee9
+            text_muted: egui::Color32::from_rgb(0x4c, 0x56, 0x6a),     // nord3 #4c566a
+            fg: egui::Color32::from_rgb(0xec, 0xef, 0xf4),
+            fg_dark: egui::Color32::from_rgb(0xd8, 0xde, 0xe9),
+            comment: egui::Color32::from_rgb(0x4c, 0x56, 0x6a),
+
+            // Status - Aurora
+            success: egui::Color32::from_rgb(0xa3, 0xbe, 0x8c), // nord14 green
+            warning: egui::Color32::from_rgb(0xeb, 0xcb, 0x8b), // nord13 yellow
+            error: egui::Color32::from_rgb(0xbf, 0x61, 0x6a),   // nord11 red
+            info: egui::Color32::from_rgb(0x88, 0xc0, 0xd0),    // nord8 cyan
+
+            // VU Meter - Aurora colors
+            vu_green: egui::Color32::from_rgb(0xa3, 0xbe, 0x8c),  // nord14
+            vu_yellow: egui::Color32::from_rgb(0xeb, 0xcb, 0x8b), // nord13
+            vu_red: egui::Color32::from_rgb(0xbf, 0x61, 0x6a),    // nord11
+        }
+    }
+
+    /// Scarlett Solo - Focusrite Scarlett Solo 4th Gen hardware-accurate theme
+    /// Inspired by the actual device: matte black enclosure, red ring gain knob,
+    /// green/red LED indicators, silver/chrome accents
+    pub fn scarlett_solo() -> Self {
+        // Scarlett Solo 4th Gen color reference:
+        // - Main body: Matte black anodized aluminum
+        // - Gain ring: Bright red (Focusrite signature)
+        // - LED indicators: Green (signal), Red (clip)
+        // - Text/labels: White silk-screen
+        // - Knob caps: Dark gray/gunmetal
+        Self {
+            preset: ThemePreset::ScarlettSolo,
+
+            // Backgrounds - Matte black aluminum inspired
+            bg: egui::Color32::from_rgb(0x18, 0x18, 0x18),           // Matte black
+            bg_dark: egui::Color32::from_rgb(0x10, 0x10, 0x10),      // Deeper black
+            bg_highlight: egui::Color32::from_rgb(0x2a, 0x2a, 0x2a), // Gunmetal gray
+            panel_bg: egui::Color32::from_rgb(0x1c, 0x1c, 0x1c),     // Slightly lighter panel
+            card_bg: egui::Color32::from_rgb(0x24, 0x24, 0x24),      // Card surface
+            input_bg: egui::Color32::from_rgb(0x30, 0x30, 0x30),     // Input fields
+
+            // Primary accent - Focusrite Red (the signature gain ring color)
+            accent_primary: egui::Color32::from_rgb(0xcc, 0x00, 0x00),   // Focusrite red
+            accent_secondary: egui::Color32::from_rgb(0xff, 0x33, 0x33), // Brighter red hover
+            accent_glow: egui::Color32::from_rgb(0x99, 0x00, 0x00),      // Deep red glow
+
+            // Secondary accents - Hardware inspired
+            blue: egui::Color32::from_rgb(0x4a, 0x7c, 0xa7),     // Cool steel accent
+            cyan: egui::Color32::from_rgb(0x5a, 0x8a, 0x9a),     // Muted teal
+            purple: egui::Color32::from_rgb(0x6a, 0x5a, 0x7a),   // Subtle purple
+            magenta: egui::Color32::from_rgb(0xb0, 0x30, 0x60),  // Deep magenta
+
+            // Legacy
+            deep_blue: egui::Color32::from_rgb(0x10, 0x10, 0x10),
+            medium_blue: egui::Color32::from_rgb(0x1c, 0x1c, 0x1c),
+            light_blue: egui::Color32::from_rgb(0x30, 0x30, 0x30),
+            green_primary: egui::Color32::from_rgb(0x00, 0xcc, 0x44),   // Scarlett LED green
+            green_secondary: egui::Color32::from_rgb(0x5a, 0x8a, 0x9a),
+            green_glow: egui::Color32::from_rgb(0x00, 0x99, 0x33),
+            background: egui::Color32::from_rgb(0x18, 0x18, 0x18),
+
+            // Text - Silk-screen white on black
+            text_primary: egui::Color32::from_rgb(0xf0, 0xf0, 0xf0),   // White labels
+            text_secondary: egui::Color32::from_rgb(0xc0, 0xc0, 0xc0), // Light gray
+            text_muted: egui::Color32::from_rgb(0x70, 0x70, 0x70),     // Muted gray
+            fg: egui::Color32::from_rgb(0xf0, 0xf0, 0xf0),
+            fg_dark: egui::Color32::from_rgb(0xc0, 0xc0, 0xc0),
+            comment: egui::Color32::from_rgb(0x70, 0x70, 0x70),
+
+            // Status - Hardware LED inspired
+            success: egui::Color32::from_rgb(0x00, 0xcc, 0x44), // Signal present (green LED)
+            warning: egui::Color32::from_rgb(0xff, 0xaa, 0x00), // Amber warning
+            error: egui::Color32::from_rgb(0xff, 0x00, 0x00),   // Clip indicator (red LED)
+            info: egui::Color32::from_rgb(0x4a, 0x7c, 0xa7),    // Info blue
+
+            // VU Meter - Matches Scarlett LED colors exactly
+            vu_green: egui::Color32::from_rgb(0x00, 0xcc, 0x44),  // Signal good
+            vu_yellow: egui::Color32::from_rgb(0xff, 0xaa, 0x00), // -6dB to -3dB
+            vu_red: egui::Color32::from_rgb(0xff, 0x00, 0x00),    // Clip/peak
         }
     }
 

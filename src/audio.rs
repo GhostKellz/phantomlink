@@ -157,7 +157,73 @@ impl ChannelProcessor {
         
         // Store levels for GUI access
         self.last_levels = levels;
-        
+
+        (stereo_output, levels)
+    }
+
+    /// Process audio with GhostWave AI denoising (GhostWave -> VST chain order)
+    /// This is the recommended pipeline for NVIDIA Broadcast-quality processing
+    pub fn process_with_ghostwave(
+        &mut self,
+        input: &[f32],
+        ghostwave: Option<&mut GhostWaveIntegration>,
+        dt: f32
+    ) -> (Vec<f32>, [f32; 2]) {
+        if self.muted {
+            return (vec![0.0; input.len()], [0.0, 0.0]);
+        }
+
+        let mut output = input.to_vec();
+
+        // 1. Apply input gain (pre-processing)
+        let gain_linear = if self.gain >= 0.0 {
+            1.0 + self.gain / 20.0
+        } else {
+            10.0_f32.powf(self.gain / 20.0)
+        };
+
+        for sample in &mut output {
+            *sample *= gain_linear;
+        }
+
+        // 2. Apply GhostWave AI denoising (RTX-accelerated)
+        //    This runs BEFORE VST to give clean audio to subsequent effects
+        if let Some(gw) = ghostwave {
+            if gw.is_enabled() {
+                if let Err(e) = gw.process(&mut output) {
+                    log::trace!("GhostWave processing error: {}", e);
+                }
+            }
+        }
+
+        // 3. Apply VST processing chain (post-denoising)
+        //    VST effects receive clean, denoised audio
+        if let Some(ref mut vst) = self.vst_processor {
+            output = vst.process(&output);
+        }
+
+        // 4. Apply output volume
+        for sample in &mut output {
+            *sample *= self.volume;
+        }
+
+        // 5. Apply stereo panning
+        let mut stereo_output = Vec::with_capacity(output.len() * 2);
+        for &sample in &output {
+            let left_gain = if self.pan <= 0.0 { 1.0 } else { 1.0 - self.pan };
+            let right_gain = if self.pan >= 0.0 { 1.0 } else { 1.0 + self.pan };
+
+            stereo_output.push(sample * left_gain);
+            stereo_output.push(sample * right_gain);
+        }
+
+        // Update VU meter and get levels
+        let (peak, rms) = self.vu_meter.process(&stereo_output, dt);
+        let levels = [peak, rms];
+
+        // Store levels for GUI access
+        self.last_levels = levels;
+
         (stereo_output, levels)
     }
 }
@@ -263,6 +329,7 @@ impl AudioEngine {
     }
 
     // Advanced denoising methods
+    #[allow(dead_code)] // API for denoising settings UI
     pub fn set_denoising_mode(&self, mode: DenoisingMode) -> Result<()> {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(mut d) = denoiser.lock() {
@@ -304,6 +371,7 @@ impl AudioEngine {
     }
 
     /// Get denoising metrics for display
+    #[allow(dead_code)] // API for metrics panel
     pub fn get_denoising_metrics(&self) -> Option<crate::advanced_denoising::DenoisingMetrics> {
         if let Some(ref denoiser) = self.advanced_denoiser {
             if let Ok(d) = denoiser.lock() {
@@ -349,9 +417,11 @@ impl AudioEngine {
         let channels = Arc::clone(&self.channels);
         let rnnoise = Arc::clone(&self.rnnoise);
         let advanced_denoiser = self.advanced_denoiser.clone();
+        let ghostwave = self.ghostwave.clone();
+        let use_ghostwave = self.use_ghostwave;
         let spectrum_analyzer: Arc<Mutex<SpectrumAnalyzer>> = Arc::clone(&self.spectrum_analyzer);
         let spectrum_data: Arc<Mutex<Vec<f32>>> = Arc::clone(&self.spectrum_data);
-        
+
         // Input stream: capture and process audio
         let input_stream = input_device.build_input_stream(
             &input_config,
@@ -359,11 +429,22 @@ impl AudioEngine {
                 // Process input through all channels and mix
                 let mut mixed_output = vec![0.0; data.len()];
                 let mut total_levels = [0.0f32; 2];
-                
+
+                // Get GhostWave lock outside the channel loop for efficiency
+                let mut gw_guard = if use_ghostwave {
+                    ghostwave.as_ref().and_then(|gw| gw.lock().ok())
+                } else {
+                    None
+                };
+
                 if let Ok(mut channels) = channels.lock() {
                     for channel in channels.iter_mut() {
-                        // Use advanced denoiser if available, otherwise fall back to legacy RNNoise
-                        let (processed, levels) = if advanced_denoiser.is_some() {
+                        // Priority: GhostWave (RTX) -> Advanced Denoiser -> Legacy RNNoise
+                        let (processed, levels) = if let Some(ref mut gw) = gw_guard {
+                            // Use GhostWave AI denoising (NVIDIA Broadcast quality)
+                            // Order: Gain -> GhostWave -> VST -> Volume -> Pan
+                            channel.process_with_ghostwave(data, Some(gw), 0.02)
+                        } else if advanced_denoiser.is_some() {
                             channel.process_advanced(data, advanced_denoiser.as_ref(), 0.02)
                         } else if let Ok(rnnoise) = rnnoise.lock() {
                             channel.process(data, &rnnoise, 0.02)
@@ -371,20 +452,20 @@ impl AudioEngine {
                             // Fallback: process without denoising
                             channel.process_advanced(data, None, 0.02)
                         };
-                        
+
                         // Mix the processed audio from this channel
                         for (i, &sample) in processed.iter().enumerate() {
                             if i < mixed_output.len() {
                                 mixed_output[i] += sample / CHANNEL_COUNT as f32; // Average mix
                             }
                         }
-                        
+
                         // Accumulate levels for overall monitoring
                         total_levels[0] = total_levels[0].max(levels[0]); // Peak
                         total_levels[1] += levels[1] / CHANNEL_COUNT as f32; // RMS average
                     }
                 }
-                
+
                 // Update spectrum analyzer
                 if let Ok(mut analyzer) = spectrum_analyzer.lock() {
                     let spectrum = analyzer.process(&mixed_output);
@@ -393,7 +474,7 @@ impl AudioEngine {
                         spectrum_out[..copy_len].copy_from_slice(&spectrum[..copy_len]);
                     }
                 }
-                
+
                 // Send processed audio to output buffer
                 if let Ok(mut buffer) = audio_buffer.lock() {
                     for &sample in &mixed_output {
@@ -528,6 +609,32 @@ impl AudioEngine {
             }
         }
         detect_nvidia_driver().gpu_name
+    }
+
+    /// Get reference to GhostWave integration for GUI access
+    #[allow(dead_code)] // API for direct GhostWave access from GUI
+    pub fn get_ghostwave(&self) -> Option<&Arc<Mutex<GhostWaveIntegration>>> {
+        self.ghostwave.as_ref()
+    }
+
+    /// Get GhostWave metrics for telemetry display
+    pub fn get_ghostwave_metrics(&self) -> Option<crate::ghostwave_integration::ProcessingMetrics> {
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(g) = gw.lock() {
+                return Some(g.get_metrics().clone());
+            }
+        }
+        None
+    }
+
+    /// Get GhostWave GPU fallback status
+    pub fn get_ghostwave_fallback_status(&self) -> Option<crate::ghostwave_integration::GpuFallbackStatus> {
+        if let Some(ref gw) = self.ghostwave {
+            if let Ok(g) = gw.lock() {
+                return Some(g.get_gpu_fallback().clone());
+            }
+        }
+        None
     }
 
     pub fn get_channel_levels(&self, channel_idx: usize) -> Option<[f32; 2]> {

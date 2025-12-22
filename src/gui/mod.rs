@@ -16,7 +16,10 @@ use crate::gui::applications::ApplicationManager;
 use crate::gui::mixer::MixerPanel;
 use crate::gui::visualizer::SpectrumAnalyzer;
 use crate::advanced_denoising::{DenoisingMode, DenoisingMetrics};
-use crate::ghostwave_integration::{PhantomLinkProfile, GhostWaveIntegration, detect_nvidia_driver, DriverInfo};
+use crate::ghostwave_integration::{
+    PhantomLinkProfile, GhostWaveIntegration, detect_nvidia_driver, DriverInfo,
+    LatencyMode, StatusHealth,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MainTab {
@@ -69,8 +72,10 @@ pub struct PhantomlinkApp {
     ghostwave: Option<GhostWaveIntegration>,
     ghostwave_profile: PhantomLinkProfile,
     ghostwave_strength: f32,
+    ghostwave_latency_mode: LatencyMode,
     driver_info: DriverInfo,
     // Legacy denoising state (fallback)
+    #[allow(dead_code)] // Preserved for denoising settings panel
     current_denoising_mode: DenoisingMode,
     advanced_denoising_enabled: bool,
     show_denoising_metrics: bool,
@@ -95,6 +100,12 @@ pub struct PhantomlinkApp {
     last_save_time: std::time::Instant,
     master_volume: f32,
     mute_all: bool,
+    // PipeWire audio preset
+    pipewire_preset: enhanced_methods::PipeWirePreset,
+    // PipeWire virtual device manager
+    pipewire_device: Option<crate::pipewire::VirtualDeviceManager>,
+    #[allow(dead_code)] // State tracking for PipeWire device status
+    pipewire_device_active: bool,
     #[allow(dead_code)]
     solo_any: bool,
 }
@@ -148,6 +159,7 @@ impl Default for PhantomlinkApp {
             ghostwave,
             ghostwave_profile: PhantomLinkProfile::default(),
             ghostwave_strength: 0.65,
+            ghostwave_latency_mode: LatencyMode::default(),
             driver_info,
             // Legacy denoising
             current_denoising_mode: DenoisingMode::Enhanced,
@@ -172,6 +184,22 @@ impl Default for PhantomlinkApp {
             last_save_time: std::time::Instant::now(),
             master_volume: 0.8,
             mute_all: false,
+            pipewire_preset: enhanced_methods::PipeWirePreset::default(),
+            // Initialize PipeWire virtual device manager
+            pipewire_device: if crate::pipewire::is_pipewire_running() {
+                let mut mgr = crate::pipewire::VirtualDeviceManager::default();
+                // Try to create virtual device on startup
+                if mgr.create_virtual_device().is_ok() {
+                    // Auto-link to Scarlett Solo if available
+                    let _ = mgr.auto_link_source(Some("Scarlett"));
+                    Some(mgr)
+                } else {
+                    None
+                }
+            } else {
+                None
+            },
+            pipewire_device_active: false,
             solo_any: false,
         }
     }
@@ -190,6 +218,9 @@ impl eframe::App for PhantomlinkApp {
 
         // Update notifications
         self.update_notifications();
+
+        // Update channel telemetry from GhostWave and audio engine
+        self.update_channel_telemetry();
 
         // Show help overlay if enabled
         if self.show_help_overlay {
@@ -361,96 +392,226 @@ impl PhantomlinkApp {
     
     fn draw_advanced_panel(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_top(|ui| {
-            // Advanced Noise Suppression Controls
+            // GhostWave v0.2.0 Controls with Telemetry
             egui::Frame::none()
                 .fill(self.theme.translucent_input_bg())
-                .stroke(egui::Stroke::new(1.0, self.theme.light_blue))
+                .stroke(egui::Stroke::new(1.0, self.theme.accent_primary))
                 .rounding(egui::Rounding::same(12.0))
                 .inner_margin(egui::Margin::same(16.0))
                 .show(ui, |ui| {
-                    ui.set_min_width(400.0);
-                    
+                    ui.set_min_width(450.0);
+
+                    // Header with status indicator
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("🔇 RTX Noise Suppression (Ghostwave)")
+                            egui::RichText::new("🔇 GhostWave v0.2.0")
                                 .size(18.0)
                                 .strong()
-                                .color(self.theme.green_primary)
+                                .color(self.theme.accent_primary)
                         );
-                        
+
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("📊").on_hover_text("Show Metrics").clicked() {
+                            // Status health indicator
+                            if let Some(ref gw) = self.ghostwave {
+                                let health = gw.get_status_health();
+                                let (color, icon) = match health {
+                                    StatusHealth::Healthy => (self.theme.success, "✓"),
+                                    StatusHealth::CpuOnly => (self.theme.info, "⚡"),
+                                    StatusHealth::Warning => (self.theme.warning, "⚠"),
+                                    StatusHealth::Disabled => (self.theme.text_muted, "○"),
+                                };
+                                ui.label(
+                                    egui::RichText::new(format!("{} {}", icon, health.name()))
+                                        .size(12.0)
+                                        .color(color)
+                                );
+                            }
+
+                            if ui.small_button("📊").on_hover_text("Toggle Metrics").clicked() {
                                 self.show_denoising_metrics = !self.show_denoising_metrics;
                             }
                         });
                     });
-                    
-                    ui.add_space(16.0);
-                    
+
+                    ui.add_space(12.0);
+
+                    // GPU info row
+                    if let Some(ref gw) = self.ghostwave {
+                        let rtx = gw.get_rtx_status();
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("GPU: {} • {}", rtx.gpu_name, rtx.precision))
+                                    .size(11.0)
+                                    .color(self.theme.text_secondary)
+                            );
+                        });
+                        ui.add_space(8.0);
+                    }
+
                     // Enable/Disable toggle
                     let mut advanced_enabled = self.advanced_denoising_enabled;
                     if ui.add(
-                        egui::Checkbox::new(&mut advanced_enabled, "Enable Advanced AI Denoising")
+                        egui::Checkbox::new(&mut advanced_enabled, "Enable RTX AI Denoising")
                     ).changed() {
                         self.advanced_denoising_enabled = advanced_enabled;
                         self.audio_engine.set_advanced_denoising_enabled(advanced_enabled);
+                        if let Some(ref mut gw) = self.ghostwave {
+                            gw.set_enabled(advanced_enabled);
+                        }
                     }
-                    
+
                     if self.advanced_denoising_enabled {
                         ui.add_space(12.0);
-                        
-                        // Denoising mode selection
+
+                        // Profile selection
                         ui.label(
-                            egui::RichText::new("Denoising Mode:")
-                                .size(14.0)
+                            egui::RichText::new("Processing Profile:")
+                                .size(13.0)
                                 .color(self.theme.text_primary)
                         );
-                        
-                        ui.add_space(8.0);
-                        
+                        ui.add_space(4.0);
+
                         ui.horizontal(|ui| {
-                            let modes = [
-                                (DenoisingMode::Basic, "Basic", "Fast RNNoise only"),
-                                (DenoisingMode::Enhanced, "Enhanced", "RNNoise + Deep Learning"),
-                                (DenoisingMode::Maximum, "Maximum", "All denoising tiers")
-                            ];
-                            
-                            for (mode, label, description) in &modes {
-                                let is_selected = std::mem::discriminant(&self.current_denoising_mode) == std::mem::discriminant(mode);
-                                
+                            for profile in PhantomLinkProfile::all() {
+                                let is_selected = self.ghostwave_profile == *profile;
                                 if ui.add(
-                                    egui::RadioButton::new(is_selected, *label)
-                                ).on_hover_text(*description).clicked() {
-                                    self.current_denoising_mode = mode.clone();
-                                    if let Err(e) = self.audio_engine.set_denoising_mode(mode.clone()) {
-                                        self.error_message = Some(format!("Failed to set denoising mode: {}", e));
+                                    egui::RadioButton::new(is_selected, profile.name())
+                                ).on_hover_text(profile.description()).clicked() {
+                                    self.ghostwave_profile = *profile;
+                                    if let Some(ref mut gw) = self.ghostwave {
+                                        let _ = gw.set_profile(*profile);
                                     }
                                 }
                             }
                         });
-                        
-                        // Show metrics if enabled
+
+                        ui.add_space(12.0);
+
+                        // Latency mode selection (v0.2.0)
+                        ui.label(
+                            egui::RichText::new("Latency Mode:")
+                                .size(13.0)
+                                .color(self.theme.text_primary)
+                        );
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            for mode in LatencyMode::all() {
+                                let is_selected = self.ghostwave_latency_mode == *mode;
+                                if ui.add(
+                                    egui::RadioButton::new(is_selected, mode.name())
+                                ).on_hover_text(mode.description()).clicked() {
+                                    self.ghostwave_latency_mode = *mode;
+                                    if let Some(ref mut gw) = self.ghostwave {
+                                        gw.set_latency_mode(*mode);
+                                    }
+                                }
+                            }
+                        });
+
+                        ui.add_space(12.0);
+
+                        // Strength slider
+                        ui.horizontal(|ui| {
+                            ui.label("Strength:");
+                            if ui.add(
+                                egui::Slider::new(&mut self.ghostwave_strength, 0.0..=1.0)
+                                    .show_value(true)
+                            ).changed() {
+                                if let Some(ref mut gw) = self.ghostwave {
+                                    let _ = gw.set_noise_strength(self.ghostwave_strength);
+                                }
+                            }
+                        });
+
+                        // Telemetry panel
                         if self.show_denoising_metrics {
                             ui.add_space(12.0);
                             ui.separator();
-                            ui.add_space(12.0);
-                            
-                            if let Some(metrics) = self.audio_engine.get_denoising_metrics() {
-                                self.show_denoising_metrics_ui(ui, &metrics);
-                            } else {
-                                ui.label(
-                                    egui::RichText::new("Metrics unavailable")
-                                        .size(12.0)
-                                        .color(self.theme.text_muted)
-                                );
+                            ui.add_space(8.0);
+
+                            ui.label(
+                                egui::RichText::new("Processing Telemetry")
+                                    .size(13.0)
+                                    .strong()
+                                    .color(self.theme.accent_secondary)
+                            );
+                            ui.add_space(4.0);
+
+                            if let Some(ref gw) = self.ghostwave {
+                                let metrics = gw.get_metrics();
+                                let fallback = gw.get_gpu_fallback();
+
+                                egui::Grid::new("ghostwave_metrics")
+                                    .num_columns(2)
+                                    .spacing([16.0, 4.0])
+                                    .show(ui, |ui| {
+                                        ui.label("Latency:");
+                                        ui.label(
+                                            egui::RichText::new(format!("{:.2} ms", metrics.latency_ms))
+                                                .color(self.theme.text_primary)
+                                        );
+                                        ui.end_row();
+
+                                        ui.label("Frames:");
+                                        ui.label(
+                                            egui::RichText::new(format!("{}", metrics.frames_processed))
+                                                .color(self.theme.text_primary)
+                                        );
+                                        ui.end_row();
+
+                                        ui.label("XRuns:");
+                                        let xrun_color = if metrics.xruns > 0 { self.theme.warning } else { self.theme.success };
+                                        ui.label(
+                                            egui::RichText::new(format!("{}", metrics.xruns))
+                                                .color(xrun_color)
+                                        );
+                                        ui.end_row();
+
+                                        ui.label("GPU Status:");
+                                        let status_color = if fallback.gpu_active { self.theme.success } else { self.theme.warning };
+                                        ui.label(
+                                            egui::RichText::new(fallback.status_string())
+                                                .color(status_color)
+                                        );
+                                        ui.end_row();
+
+                                        if metrics.voice_activity {
+                                            ui.label("Voice:");
+                                            ui.label(
+                                                egui::RichText::new("Detected")
+                                                    .color(self.theme.success)
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+
+                                // GPU fallback warning with restart button
+                                if fallback.fallback_active {
+                                    ui.add_space(8.0);
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new("⚠ GPU fallback active")
+                                                .size(12.0)
+                                                .color(self.theme.warning)
+                                        );
+                                        if ui.small_button("🔄 Restart GPU").clicked() {
+                                            if let Some(ref mut gw) = self.ghostwave {
+                                                if let Err(e) = gw.restart_gpu() {
+                                                    self.error_message = Some(format!("GPU restart failed: {}", e));
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
-                    
-                    ui.add_space(12.0);
+
+                    ui.add_space(8.0);
                     ui.label(
-                        egui::RichText::new("Professional RTX Voice-style noise suppression with NVIDIA open drivers")
-                            .size(12.0)
+                        egui::RichText::new("RTX Voice-quality noise suppression • nvidia-open 545+")
+                            .size(11.0)
                             .color(self.theme.text_muted)
                     );
                 });
@@ -1008,6 +1169,7 @@ impl PhantomlinkApp {
             });
     }
     
+    #[allow(dead_code)] // UI helper for legacy denoising metrics display
     fn show_denoising_metrics_ui(&self, ui: &mut egui::Ui, metrics: &DenoisingMetrics) {
         ui.label(
             egui::RichText::new("Performance Metrics:")

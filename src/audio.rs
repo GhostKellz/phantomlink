@@ -12,11 +12,13 @@ use crate::advanced_denoising::{
 use crate::ghostwave_integration::{
     GhostWaveIntegration, PhantomLinkProfile, detect_nvidia_driver
 };
+use crate::audio_effects::{ChannelEffects, ChannelEffectsConfig};
 use crossbeam_channel::{Receiver, Sender};
 use anyhow::Result;
 
 const BUFFER_SIZE: usize = 1024;
 const CHANNEL_COUNT: usize = 4;
+const DEFAULT_SAMPLE_RATE: f32 = 48000.0;
 
 /// Audio channel processor with volume, effects, and metering
 pub struct ChannelProcessor {
@@ -31,6 +33,8 @@ pub struct ChannelProcessor {
     buffer: Vec<f32>,
     vu_meter: VUMeter,
     last_levels: [f32; 2], // Store last peak/rms levels
+    /// Dynamics effects chain (Gate -> Compressor -> Limiter)
+    pub effects: ChannelEffects,
 }
 
 impl ChannelProcessor {
@@ -45,7 +49,13 @@ impl ChannelProcessor {
             buffer: vec![0.0; BUFFER_SIZE],
             vu_meter: VUMeter::new(128),
             last_levels: [0.0, 0.0],
+            effects: ChannelEffects::new(DEFAULT_SAMPLE_RATE),
         }
+    }
+
+    /// Configure effects chain
+    pub fn configure_effects(&mut self, config: &ChannelEffectsConfig) {
+        self.effects.apply_config(config);
     }
 
     pub fn process(&mut self, input: &[f32], rnnoise: &Rnnoise, dt: f32) -> (Vec<f32>, [f32; 2]) {
@@ -70,12 +80,15 @@ impl ChannelProcessor {
         if rnnoise.is_enabled() {
             output = rnnoise.process(&output);
         }
-        
+
         // Apply VST processing
         if let Some(ref mut vst) = self.vst_processor {
             output = vst.process(&output);
         }
-        
+
+        // Apply dynamics effects chain (Gate -> Compressor -> Limiter)
+        self.effects.process(&mut output);
+
         // Apply volume
         for sample in &mut output {
             *sample *= self.volume;
@@ -641,6 +654,16 @@ impl AudioEngine {
         if let Ok(channels) = self.channels.lock() {
             if let Some(channel) = channels.get(channel_idx) {
                 return Some(channel.last_levels); // Return actual stored levels
+            }
+        }
+        None
+    }
+
+    /// Get channel state (volume, muted, gain, pan)
+    pub fn get_channel_state(&self, channel_idx: usize) -> Option<(f32, bool, f32, f32)> {
+        if let Ok(channels) = self.channels.lock() {
+            if let Some(channel) = channels.get(channel_idx) {
+                return Some((channel.volume, channel.muted, channel.gain, channel.pan));
             }
         }
         None

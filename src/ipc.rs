@@ -401,12 +401,14 @@ impl IpcServer {
         let channels: Vec<ChannelState> = (0..4)
             .filter_map(|i| {
                 audio_engine.lock().ok().and_then(|e| {
-                    e.get_channel_levels(i).map(|levels| ChannelState {
+                    let levels = e.get_channel_levels(i).unwrap_or([0.0, 0.0]);
+                    let (volume, muted, gain, pan) = e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
+                    Some(ChannelState {
                         index: i,
-                        volume: 0.8, // TODO: Get actual volume
-                        muted: false,
-                        gain: 0.0,
-                        pan: 0.0,
+                        volume,
+                        muted,
+                        gain,
+                        pan,
                         peak_level: levels[0],
                         rms_level: levels[1],
                     })
@@ -444,12 +446,14 @@ impl IpcServer {
         let channels: Vec<ChannelState> = (0..4)
             .filter_map(|i| {
                 audio_engine.lock().ok().and_then(|e| {
-                    e.get_channel_levels(i).map(|levels| ChannelState {
+                    let levels = e.get_channel_levels(i).unwrap_or([0.0, 0.0]);
+                    let (volume, muted, gain, pan) = e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
+                    Some(ChannelState {
                         index: i,
-                        volume: 0.8,
-                        muted: false,
-                        gain: 0.0,
-                        pan: 0.0,
+                        volume,
+                        muted,
+                        gain,
+                        pan,
                         peak_level: levels[0],
                         rms_level: levels[1],
                     })
@@ -537,7 +541,9 @@ impl IpcServer {
         };
 
         if let Ok(engine) = audio_engine.lock() {
-            engine.update_channel(channel, 0.8, muted); // TODO: Preserve volume
+            // Get current channel state to preserve other values
+            let (volume, _, gain, pan) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
             JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
@@ -579,7 +585,9 @@ impl IpcServer {
         };
 
         if let Ok(engine) = audio_engine.lock() {
-            engine.update_channel_advanced(channel, 0.8, false, gain, 0.0);
+            // Get current channel state to preserve other values
+            let (volume, muted, _, pan) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
             JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
@@ -621,7 +629,9 @@ impl IpcServer {
         };
 
         if let Ok(engine) = audio_engine.lock() {
-            engine.update_channel_advanced(channel, 0.8, false, 0.0, pan);
+            // Get current channel state to preserve other values
+            let (volume, muted, gain, _) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
             JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())

@@ -2,6 +2,7 @@ mod phantomlink;
 mod gui;
 mod rnnoise;
 mod audio;
+mod audio_effects;
 mod scarlett;
 mod config;
 mod jack_client;

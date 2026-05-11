@@ -1,20 +1,22 @@
-mod phantomlink;
-mod gui;
-mod rnnoise;
-mod audio;
-mod audio_effects;
-mod scarlett;
-mod config;
-mod jack_client;
-mod vst_host;
 mod advanced_denoising;
+mod audio;
+#[allow(dead_code)] // Public effects API, wired incrementally from GUI
+mod audio_effects;
+mod config;
 mod ghostwave_integration;
-mod pipewire;
-mod ipc;
 mod gpu;
+mod gui;
+mod ipc;
+#[allow(dead_code)] // Kept for future JACK pro audio support
+mod jack_client;
+mod phantomlink;
+mod pipewire;
+mod rnnoise;
+mod scarlett;
+mod vst_host;
 
-use std::sync::{Arc, Mutex};
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 
 fn main() {
     // Initialize logging
@@ -82,7 +84,7 @@ fn main() {
         Box::new(|cc| {
             // Configure egui for better rendering
             cc.egui_ctx.set_pixels_per_point(1.0);
-            Box::new(gui::PhantomlinkApp::default())
+            Ok(Box::new(gui::PhantomlinkApp::default()))
         }),
     )
     .unwrap();

@@ -1,3 +1,16 @@
+phantomlink (0.4.0-1) unstable; urgency=medium
+
+  * Upgrade eframe 0.27 to 0.29
+  * Wire AudioRouter into AudioEngine processing pipeline
+  * Add JACK client integration to GUI
+  * Add config persistence (theme, channels, ghostwave settings)
+  * Add 21 new tests (97 total)
+  * Fix documentation accuracy (latency claims, version refs, theme lists)
+  * Tokyo Night theme only (Night/Moon/Storm variants)
+  * GhostWave v0.3.0 integration
+
+ -- Christopher Kelley <ckelley@ghostkellz.sh>  Sat, 10 May 2026 00:00:00 +0000
+
 phantomlink (0.2.0-1) unstable; urgency=medium
 
   * Initial release
@@ -5,9 +18,8 @@ phantomlink (0.2.0-1) unstable; urgency=medium
   * GhostWave RTX AI noise suppression
   * Professional mixer with VU meters and peak hold
   * Hardware-style gain knobs
-  * Multiple theme presets (Tokyo Night, Catppuccin, Dracula, Scarlett, Wavelink)
   * Echo cancellation (AEC)
   * DSP routing controls
-  * Hardware level metering (12-channel)
+  * Hardware level metering
 
  -- Christopher Kelley <ckelley@ghostkellz.sh>  Sat, 30 Nov 2024 00:00:00 +0000

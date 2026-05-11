@@ -204,10 +204,10 @@ impl VirtualDeviceManager {
 
         // Parse the module ID from output for cleanup later
         let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(id_str) = stdout.split_whitespace().last() {
-            if let Ok(id) = id_str.parse::<u32>() {
-                self.module_id = Some(id);
-            }
+        if let Some(id_str) = stdout.split_whitespace().last()
+            && let Ok(id) = id_str.parse::<u32>()
+        {
+            self.module_id = Some(id);
         }
 
         *self.state.lock().unwrap() = VirtualDeviceState::Active;
@@ -253,10 +253,11 @@ impl VirtualDeviceManager {
         for line in stdout.lines() {
             if line.contains("type PipeWire:Interface:Node") {
                 // Start of a new node
-                if let Some(node) = current_node.take() {
-                    if in_source && !node.name.is_empty() {
-                        sources.push(node);
-                    }
+                if let Some(node) = current_node.take()
+                    && in_source
+                    && !node.name.is_empty()
+                {
+                    sources.push(node);
                 }
                 current_node = Some(AudioSourceInfo::default());
                 in_source = false;
@@ -265,34 +266,34 @@ impl VirtualDeviceManager {
                 if line.contains("media.class") && line.contains("Audio/Source") {
                     in_source = true;
                 }
-                if line.contains("node.name") {
-                    if let Some(name) = extract_property_value(line) {
-                        // Skip our own virtual device
-                        if !name.contains("PhantomLink") {
-                            node.name = name;
-                        }
+                if line.contains("node.name")
+                    && let Some(name) = extract_property_value(line)
+                {
+                    // Skip our own virtual device
+                    if !name.contains("PhantomLink") {
+                        node.name = name;
                     }
                 }
-                if line.contains("node.description") {
-                    if let Some(desc) = extract_property_value(line) {
-                        node.description = desc;
-                    }
+                if line.contains("node.description")
+                    && let Some(desc) = extract_property_value(line)
+                {
+                    node.description = desc;
                 }
-                if line.contains("object.id") {
-                    if let Some(id_str) = extract_property_value(line) {
-                        if let Ok(id) = id_str.parse::<u32>() {
-                            node.node_id = id;
-                        }
-                    }
+                if line.contains("object.id")
+                    && let Some(id_str) = extract_property_value(line)
+                    && let Ok(id) = id_str.parse::<u32>()
+                {
+                    node.node_id = id;
                 }
             }
         }
 
         // Don't forget the last node
-        if let Some(node) = current_node {
-            if in_source && !node.name.is_empty() {
-                sources.push(node);
-            }
+        if let Some(node) = current_node
+            && in_source
+            && !node.name.is_empty()
+        {
+            sources.push(node);
         }
 
         // Also try pactl for fallback
@@ -340,11 +341,19 @@ impl VirtualDeviceManager {
 
         // Find preferred source or Scarlett Solo
         let source = if let Some(pref) = preferred {
-            sources.iter().find(|s| s.name.contains(pref) || s.description.contains(pref))
+            sources
+                .iter()
+                .find(|s| s.name.contains(pref) || s.description.contains(pref))
         } else {
             // Default preference: Scarlett Solo > USB Audio > Built-in
-            sources.iter().find(|s| s.name.contains("Scarlett") || s.description.contains("Scarlett"))
-                .or_else(|| sources.iter().find(|s| s.name.contains("USB") || s.description.contains("USB")))
+            sources
+                .iter()
+                .find(|s| s.name.contains("Scarlett") || s.description.contains("Scarlett"))
+                .or_else(|| {
+                    sources
+                        .iter()
+                        .find(|s| s.name.contains("USB") || s.description.contains("USB"))
+                })
                 .or_else(|| sources.first())
         };
 
@@ -384,7 +393,11 @@ impl VirtualDeviceManager {
                     .output();
 
                 self.linked_source = Some(source.clone());
-                log::info!("Linked {} to {} (FL channel)", source.name, self.device_name);
+                log::info!(
+                    "Linked {} to {} (FL channel)",
+                    source.name,
+                    self.device_name
+                );
             }
         }
 
@@ -405,8 +418,10 @@ impl VirtualDeviceManager {
     pub fn set_quantum(&self, quantum: u32) -> Result<()> {
         let output = Command::new("pw-metadata")
             .args([
-                "-n", "settings",
-                "0", "clock.force-quantum",
+                "-n",
+                "settings",
+                "0",
+                "clock.force-quantum",
                 &quantum.to_string(),
             ])
             .output()
@@ -463,10 +478,7 @@ pub fn is_pipewire_running() -> bool {
 
 /// Get PipeWire server info
 pub fn get_pipewire_info() -> Option<PipeWireInfo> {
-    let output = Command::new("pw-cli")
-        .arg("info")
-        .output()
-        .ok()?;
+    let output = Command::new("pw-cli").arg("info").output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -476,25 +488,25 @@ pub fn get_pipewire_info() -> Option<PipeWireInfo> {
     let mut info = PipeWireInfo::default();
 
     for line in stdout.lines() {
-        if line.contains("default.clock.rate") {
-            if let Some(val) = extract_property_value(line) {
-                info.sample_rate = val.parse().unwrap_or(48000);
-            }
+        if line.contains("default.clock.rate")
+            && let Some(val) = extract_property_value(line)
+        {
+            info.sample_rate = val.parse().unwrap_or(48000);
         }
-        if line.contains("default.clock.quantum") {
-            if let Some(val) = extract_property_value(line) {
-                info.quantum = val.parse().unwrap_or(1024);
-            }
+        if line.contains("default.clock.quantum")
+            && let Some(val) = extract_property_value(line)
+        {
+            info.quantum = val.parse().unwrap_or(1024);
         }
-        if line.contains("core.name") {
-            if let Some(val) = extract_property_value(line) {
-                info.name = val;
-            }
+        if line.contains("core.name")
+            && let Some(val) = extract_property_value(line)
+        {
+            info.name = val;
         }
-        if line.contains("core.version") {
-            if let Some(val) = extract_property_value(line) {
-                info.version = val;
-            }
+        if line.contains("core.version")
+            && let Some(val) = extract_property_value(line)
+        {
+            info.version = val;
         }
     }
 
@@ -531,6 +543,9 @@ mod tests {
     #[test]
     fn test_extract_property() {
         let line = "    node.name = \"Test Device\"";
-        assert_eq!(extract_property_value(line), Some("Test Device".to_string()));
+        assert_eq!(
+            extract_property_value(line),
+            Some("Test Device".to_string())
+        );
     }
 }

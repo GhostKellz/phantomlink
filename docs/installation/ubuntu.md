@@ -6,10 +6,10 @@ Download the .deb package from the releases page:
 
 ```bash
 # Ubuntu 22.04+, Debian 12+
-wget https://github.com/ghostkellz/phantomlink/releases/latest/download/phantomlink_0.2.0_amd64.deb
+wget https://github.com/ghostkellz/phantomlink/releases/latest/download/phantomlink_0.4.0_amd64.deb
 
 # Install
-sudo apt install ./phantomlink_0.2.0_amd64.deb
+sudo apt install ./phantomlink_0.4.0_amd64.deb
 ```
 
 ## From PPA (Ubuntu)
@@ -28,7 +28,7 @@ sudo apt install phantomlink
 ### Required (installed automatically)
 - `libasound2` - ALSA library
 - `libpipewire-0.3-0` - PipeWire library
-- `libgtk-3-0` - GTK3 library
+- `libxkbcommon0` - Keyboard handling library
 
 ### Optional (for RTX acceleration)
 
@@ -140,7 +140,7 @@ rm -rf ~/.local/share/phantomlink
 ```bash
 # Install build dependencies
 sudo apt install build-essential pkg-config libssl-dev \
-    libasound2-dev libpipewire-0.3-dev libgtk-3-dev
+    libasound2-dev libpipewire-0.3-dev libxkbcommon-dev libxcb1-dev libjack-jackd2-dev
 
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh

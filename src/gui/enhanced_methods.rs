@@ -1,11 +1,11 @@
 // Additional methods for the enhanced PhantomlinkApp
-use eframe::egui;
-use crate::gui::theme::{WavelinkTheme, ThemePreset};
 use crate::config::MicrophonePreset;
-use crate::gui::widgets::{enhanced_glow_button, GlowButtonStyle};
-use crate::gui::NotificationLevel;
-use crate::gui::MainTab;
 use crate::ghostwave_integration::PhantomLinkProfile;
+use crate::gui::MainTab;
+use crate::gui::NotificationLevel;
+use crate::gui::theme::{ThemePreset, WavelinkTheme};
+use crate::gui::widgets::{GlowButtonStyle, enhanced_glow_button};
+use eframe::egui;
 
 // Re-export PipeWirePreset from pipewire module
 pub use crate::pipewire::PipeWirePreset;
@@ -41,8 +41,12 @@ impl super::PhantomlinkApp {
             if i.key_pressed(egui::Key::M) && !i.modifiers.ctrl && !i.modifiers.alt {
                 self.mute_all = !self.mute_all;
                 self.add_notification(
-                    if self.mute_all { "All channels muted" } else { "All channels unmuted" },
-                    NotificationLevel::Info
+                    if self.mute_all {
+                        "All channels muted"
+                    } else {
+                        "All channels unmuted"
+                    },
+                    NotificationLevel::Info,
                 );
             }
 
@@ -50,30 +54,44 @@ impl super::PhantomlinkApp {
             if i.modifiers.ctrl && i.key_pressed(egui::Key::M) {
                 self.mute_all = !self.mute_all;
                 self.add_notification(
-                    if self.mute_all { "All channels muted" } else { "All channels unmuted" },
-                    NotificationLevel::Info
+                    if self.mute_all {
+                        "All channels muted"
+                    } else {
+                        "All channels unmuted"
+                    },
+                    NotificationLevel::Info,
                 );
             }
 
             // G - Toggle GhostWave processing
-            if i.key_pressed(egui::Key::G) && !i.modifiers.ctrl && !i.modifiers.alt {
-                if let Some(ref mut gw) = self.ghostwave {
-                    let enabled = !gw.is_enabled();
-                    gw.set_enabled(enabled);
-                    self.advanced_denoising_enabled = enabled;
-                    self.add_notification(
-                        if enabled { "GhostWave enabled" } else { "GhostWave disabled" },
-                        NotificationLevel::Info
-                    );
-                }
+            if i.key_pressed(egui::Key::G)
+                && !i.modifiers.ctrl
+                && !i.modifiers.alt
+                && let Some(ref mut gw) = self.ghostwave
+            {
+                let enabled = !gw.is_enabled();
+                gw.set_enabled(enabled);
+                self.advanced_denoising_enabled = enabled;
+                self.add_notification(
+                    if enabled {
+                        "GhostWave enabled"
+                    } else {
+                        "GhostWave disabled"
+                    },
+                    NotificationLevel::Info,
+                );
             }
 
             // I - Toggle metrics info panel
             if i.key_pressed(egui::Key::I) && !i.modifiers.ctrl && !i.modifiers.alt {
                 self.show_denoising_metrics = !self.show_denoising_metrics;
                 self.add_notification(
-                    if self.show_denoising_metrics { "Metrics shown" } else { "Metrics hidden" },
-                    NotificationLevel::Info
+                    if self.show_denoising_metrics {
+                        "Metrics shown"
+                    } else {
+                        "Metrics hidden"
+                    },
+                    NotificationLevel::Info,
                 );
             }
 
@@ -117,7 +135,37 @@ impl super::PhantomlinkApp {
     }
 
     pub fn save_configuration(&mut self) {
-        self.add_notification("Configuration saved", NotificationLevel::Success);
+        let config = crate::config::AppConfig {
+            theme: format!("{:?}", self.theme_preset),
+            channel_volumes: self.channel_strips.iter().map(|s| s.volume).collect(),
+            channel_muted: self.channel_strips.iter().map(|s| s.muted).collect(),
+            channel_plugins: self.channel_strips.iter().map(|s| s.selected_vst).collect(),
+            scarlett_gain: if self.scarlett.is_some() { 0.5 } else { 0.0 },
+            scarlett_monitor: self.scarlett_direct_monitor,
+            rnnoise_enabled: true,
+            sample_rate: 48000.0,
+            buffer_size: if self.use_custom_buffer {
+                self.custom_buffer_size as usize
+            } else {
+                self.pipewire_preset.buffer_size() as usize
+            },
+            ghostwave: crate::config::GhostWaveConfig {
+                profile: format!("{:?}", self.ghostwave_profile),
+                latency_mode: format!("{:?}", self.ghostwave_latency_mode),
+                noise_strength: self.ghostwave_strength,
+                enabled: self.advanced_denoising_enabled,
+                show_metrics: self.show_denoising_metrics,
+            },
+            pipewire: crate::config::PipeWireConfig::default(),
+            echo_cancellation: self.echo_cancellation_enabled,
+            vst_plugin_paths: Vec::new(),
+        };
+
+        match config.save() {
+            Ok(()) => self.add_notification("Configuration saved", NotificationLevel::Success),
+            Err(e) => self.add_notification(
+                format!("Save failed: {}", e), NotificationLevel::Error),
+        }
     }
 
     pub fn update_notifications(&mut self) {
@@ -137,10 +185,10 @@ impl super::PhantomlinkApp {
 
         // Read Scarlett hardware level meters (if available)
         // Channels 0-1 are analog inputs, 2-3 are PCM outputs
-        if let Some(ref scarlett) = self.scarlett {
-            if let Ok(meters) = scarlett.read_level_meters() {
-                self.scarlett_level_meters = meters;
-            }
+        if let Some(ref scarlett) = self.scarlett
+            && let Ok(meters) = scarlett.read_level_meters()
+        {
+            self.scarlett_level_meters = meters;
         }
 
         // Update telemetry for each channel strip
@@ -154,70 +202,112 @@ impl super::PhantomlinkApp {
             }
 
             // Update GPU fallback info
-            if let Some(ref fallback) = gw_fallback {
-                if fallback.fallback_active {
-                    strip.telemetry.rtx_active = false;
-                }
+            if let Some(ref fallback) = gw_fallback
+                && fallback.fallback_active
+            {
+                strip.telemetry.rtx_active = false;
             }
 
             // Check if VST is active on this channel
             strip.telemetry.vst_active = strip.selected_vst.is_some();
 
-            // Update audio levels - prefer Scarlett hardware meters for channels 0-1
+            // Update audio levels - priority: Scarlett hardware > JACK > software engine
             if i < 2 && self.scarlett.is_some() {
                 // Use Scarlett hardware level meters for input channels
                 let peak = self.scarlett_level_meters.get_normalized(i);
                 let rms = peak * 0.707; // Approximate RMS from peak
                 strip.levels = [peak, rms];
+            } else if let Some(ref jack) = self.jack_client
+                && jack.is_available()
+            {
+                // Use JACK peak levels when available
+                let peaks = jack.get_peak_levels();
+                let idx = if i < 2 { i } else { i.min(3) };
+                strip.levels = [peaks[idx], peaks[idx] * 0.707];
             } else if let Some(levels) = self.audio_engine.get_channel_levels(i) {
-                // Use software audio engine levels for other channels
+                // Use software audio engine levels
                 strip.levels = levels;
             }
         }
     }
 
-    pub fn add_notification(&mut self, text: &str, level: NotificationLevel) {
+    pub fn add_notification(&mut self, text: impl Into<String>, level: NotificationLevel) {
         use super::NotificationMessage;
         let duration = match level {
-            NotificationLevel::Error => std::time::Duration::from_secs(10),
-            NotificationLevel::Warning => std::time::Duration::from_secs(7),
+            NotificationLevel::Error => std::time::Duration::from_secs(8),
+            NotificationLevel::Warning => std::time::Duration::from_secs(5),
             NotificationLevel::Success => std::time::Duration::from_secs(3),
-            NotificationLevel::Info => std::time::Duration::from_secs(5),
+            NotificationLevel::Info => std::time::Duration::from_secs(4),
         };
 
         self.notifications.push(NotificationMessage {
-            text: text.to_string(),
+            text: text.into(),
             level,
             timestamp: std::time::Instant::now(),
             duration,
         });
+
+        // Keep max 5 notifications visible
+        while self.notifications.len() > 5 {
+            self.notifications.remove(0);
+        }
+    }
+
+    /// Alias for add_notification for convenience
+    pub fn push_notification(&mut self, text: impl Into<String>, level: NotificationLevel) {
+        self.add_notification(text, level);
     }
 
     pub fn draw_notifications(&self, ui: &mut egui::Ui) {
-        for (i, notification) in self.notifications.iter().enumerate() {
-            let y_offset = i as f32 * 60.0 + 20.0;
+        if self.notifications.is_empty() {
+            return;
+        }
 
-            egui::Area::new(format!("notification_{}", i).into())
+        for (i, notification) in self.notifications.iter().enumerate() {
+            let y_offset = i as f32 * 56.0 + 20.0;
+
+            // Calculate fade-out alpha based on remaining time
+            let elapsed = notification.timestamp.elapsed();
+            let remaining = notification.duration.saturating_sub(elapsed);
+            let alpha =
+                (remaining.as_secs_f32() / notification.duration.as_secs_f32()).clamp(0.3, 1.0); // Min 0.3 so it's still visible
+
+            egui::Area::new(egui::Id::new(format!("notification_{}", i)))
                 .anchor(egui::Align2::RIGHT_TOP, egui::Vec2::new(-20.0, y_offset))
+                .order(egui::Order::Foreground)
                 .show(ui.ctx(), |ui| {
-                    let (bg_color, text_color) = match notification.level {
-                        NotificationLevel::Error => (self.theme.error, self.theme.text_primary),
-                        NotificationLevel::Warning => (self.theme.warning, self.theme.deep_blue),
-                        NotificationLevel::Success => (self.theme.success, self.theme.deep_blue),
-                        NotificationLevel::Info => (self.theme.info, self.theme.text_primary),
+                    let (icon, border_color) = match notification.level {
+                        NotificationLevel::Error => ("✖", self.theme.error),
+                        NotificationLevel::Warning => ("⚠", self.theme.warning),
+                        NotificationLevel::Success => ("✓", self.theme.success),
+                        NotificationLevel::Info => ("ℹ", self.theme.accent_primary),
                     };
 
                     egui::Frame::none()
-                        .fill(bg_color)
+                        .fill(self.theme.bg.linear_multiply(0.95 * alpha))
+                        .stroke(egui::Stroke::new(1.5, border_color.linear_multiply(alpha)))
                         .rounding(egui::Rounding::same(8.0))
-                        .inner_margin(egui::Margin::same(12.0))
+                        .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                         .show(ui, |ui| {
-                            ui.label(egui::RichText::new(&notification.text)
-                                .color(text_color)
-                                .size(14.0));
+                            ui.set_max_width(280.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(icon)
+                                        .size(16.0)
+                                        .color(border_color.linear_multiply(alpha)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(&notification.text)
+                                        .size(13.0)
+                                        .color(self.theme.text_primary.linear_multiply(alpha)),
+                                );
+                            });
                         });
                 });
         }
+
+        // Request repaint to animate fade-out
+        ui.ctx().request_repaint();
     }
 
     pub fn draw_help_overlay(&mut self, ctx: &egui::Context) {
@@ -234,9 +324,11 @@ impl super::PhantomlinkApp {
 
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("⌨️").size(24.0));
-                    ui.label(egui::RichText::new("Keyboard Shortcuts")
-                        .size(18.0)
-                        .strong());
+                    ui.label(
+                        egui::RichText::new("Keyboard Shortcuts")
+                            .size(18.0)
+                            .strong(),
+                    );
                 });
 
                 ui.separator();
@@ -259,10 +351,12 @@ impl super::PhantomlinkApp {
                     .spacing([20.0, 8.0])
                     .show(ui, |ui| {
                         for (key, description) in &shortcuts {
-                            ui.label(egui::RichText::new(*key)
-                                .family(egui::FontFamily::Monospace)
-                                .size(12.0)
-                                .color(egui::Color32::from_rgb(100, 200, 255)));
+                            ui.label(
+                                egui::RichText::new(*key)
+                                    .family(egui::FontFamily::Monospace)
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(100, 200, 255)),
+                            );
                             ui.label(*description);
                             ui.end_row();
                         }
@@ -348,7 +442,7 @@ impl super::PhantomlinkApp {
                                     self.theme_preset = *preset;
                                     self.theme = WavelinkTheme::with_preset(*preset);
                                     self.add_notification(
-                                        &format!("Theme changed to {}", preset.name()),
+                                        format!("Theme changed to {}", preset.name()),
                                         NotificationLevel::Success
                                     );
                                 }
@@ -508,10 +602,27 @@ impl super::PhantomlinkApp {
                             if ui.add(button).on_hover_text(preset.description()).clicked() {
                                 self.pipewire_preset = *preset;
                                 self.use_custom_buffer = false; // Reset custom buffer when selecting preset
-                                self.add_notification(
-                                    &format!("Audio preset: {} ({})", preset.name(), preset.buffer_size()),
-                                    NotificationLevel::Info
-                                );
+
+                                // Apply buffer size to audio engine
+                                let buffer_size = preset.buffer_size() as usize;
+                                if self.audio_engine.set_buffer_size(buffer_size) && self.audio_started {
+                                    if let Err(e) = self.audio_engine.restart() {
+                                        self.add_notification(
+                                            format!("Preset applied but restart failed: {}", e),
+                                            NotificationLevel::Warning
+                                        );
+                                    } else {
+                                        self.add_notification(
+                                            format!("Audio preset: {} ({} samples)", preset.name(), preset.buffer_size()),
+                                            NotificationLevel::Success
+                                        );
+                                    }
+                                } else {
+                                    self.add_notification(
+                                        format!("Audio preset: {} ({} samples)", preset.name(), preset.buffer_size()),
+                                        NotificationLevel::Info
+                                    );
+                                }
                             }
                         }
                     });
@@ -545,10 +656,29 @@ impl super::PhantomlinkApp {
                                 if let Some(&new_size) = buffer_options.get(new_idx) {
                                     self.custom_buffer_size = new_size;
                                     let latency_ms = (new_size as f32 / 48000.0) * 1000.0;
-                                    self.add_notification(
-                                        &format!("Buffer: {} samples (~{:.1}ms)", new_size, latency_ms),
-                                        NotificationLevel::Info
-                                    );
+
+                                    // Apply to audio engine
+                                    if self.audio_engine.set_buffer_size(new_size as usize) {
+                                        if self.audio_started {
+                                            // Restart engine to apply new buffer size
+                                            if let Err(e) = self.audio_engine.restart() {
+                                                self.add_notification(
+                                                    format!("Failed to apply buffer size: {}", e),
+                                                    NotificationLevel::Error
+                                                );
+                                            } else {
+                                                self.add_notification(
+                                                    format!("Buffer: {} samples (~{:.1}ms)", new_size, latency_ms),
+                                                    NotificationLevel::Success
+                                                );
+                                            }
+                                        } else {
+                                            self.add_notification(
+                                                format!("Buffer: {} samples (~{:.1}ms) - start engine to apply", new_size, latency_ms),
+                                                NotificationLevel::Info
+                                            );
+                                        }
+                                    }
                                 }
                             }
                         });
@@ -654,7 +784,7 @@ impl super::PhantomlinkApp {
                             {
                                 let mut mgr = crate::pipewire::VirtualDeviceManager::default();
                                 if let Err(e) = mgr.create_virtual_device() {
-                                    self.add_notification(&format!("Failed to create device: {}", e), NotificationLevel::Error);
+                                    self.add_notification(format!("Failed to create device: {}", e), NotificationLevel::Error);
                                 } else {
                                     let _ = mgr.auto_link_source(Some("Scarlett"));
                                     self.add_notification("Virtual device created", NotificationLevel::Success);
@@ -674,17 +804,165 @@ impl super::PhantomlinkApp {
 
                             if ui.add(enhanced_glow_button("Re-link Source", &self.theme, GlowButtonStyle::Secondary))
                                 .clicked()
-                            {
-                                if let Some(ref mut mgr) = self.pipewire_device {
+                                && let Some(ref mut mgr) = self.pipewire_device {
                                     if let Err(e) = mgr.auto_link_source(Some("Scarlett")) {
-                                        self.add_notification(&format!("Link failed: {}", e), NotificationLevel::Error);
+                                        self.add_notification(format!("Link failed: {}", e), NotificationLevel::Error);
                                     } else {
                                         self.add_notification("Source re-linked", NotificationLevel::Success);
                                     }
                                 }
-                            }
                         }
                     });
+
+                    // JACK Audio section
+                    ui.add_space(20.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("🎛")
+                            .size(18.0)
+                            .color(self.theme.accent_primary));
+                        ui.label(egui::RichText::new("JACK Audio")
+                            .size(14.0)
+                            .strong()
+                            .color(self.theme.text_primary));
+                    });
+
+                    ui.add_space(8.0);
+
+                    // Snapshot JACK state before rendering to avoid borrow conflicts
+                    let jack_available = self.jack_client.as_ref().is_some_and(|j| j.is_available());
+                    let jack_info = self.jack_client.as_ref().map(|j| {
+                        (j.get_client_name().to_string(), j.get_sample_rate(), j.get_buffer_size(), j.get_peak_levels())
+                    });
+                    let jack_capture = if jack_available {
+                        self.jack_client.as_ref().map(|j| j.list_capture_ports()).unwrap_or_default()
+                    } else { Vec::new() };
+                    let jack_playback = if jack_available {
+                        self.jack_client.as_ref().map(|j| j.list_playback_ports()).unwrap_or_default()
+                    } else { Vec::new() };
+
+                    let mut jack_connect_clicked = false;
+                    let mut jack_processing_changed = false;
+
+                    if jack_available {
+                        if let Some((ref name, srate, bsize, peaks)) = jack_info {
+                            egui::Grid::new("jack_info")
+                                .num_columns(2)
+                                .spacing([12.0, 4.0])
+                                .show(ui, |ui| {
+                                    ui.label("Status:");
+                                    ui.label(egui::RichText::new("Connected")
+                                        .color(self.theme.success));
+                                    ui.end_row();
+
+                                    ui.label("Client:");
+                                    ui.label(egui::RichText::new(name)
+                                        .color(self.theme.text_secondary));
+                                    ui.end_row();
+
+                                    ui.label("Sample Rate:");
+                                    ui.label(egui::RichText::new(format!("{} Hz", srate))
+                                        .color(self.theme.text_secondary));
+                                    ui.end_row();
+
+                                    ui.label("Buffer:");
+                                    ui.label(egui::RichText::new(format!("{} samples", bsize))
+                                        .color(self.theme.text_secondary));
+                                    ui.end_row();
+
+                                    ui.label("Input L/R:");
+                                    ui.label(egui::RichText::new(
+                                        format!("{:.2} / {:.2}", peaks[0], peaks[1])
+                                    ).color(self.theme.text_secondary));
+                                    ui.end_row();
+
+                                    ui.label("Output L/R:");
+                                    ui.label(egui::RichText::new(
+                                        format!("{:.2} / {:.2}", peaks[2], peaks[3])
+                                    ).color(self.theme.text_secondary));
+                                    ui.end_row();
+                                });
+                        }
+
+                        ui.add_space(8.0);
+
+                        if ui.checkbox(&mut self.jack_processing_enabled, "Enable Processing")
+                            .on_hover_text("When disabled, JACK input passes through directly")
+                            .changed()
+                        {
+                            jack_processing_changed = true;
+                        }
+
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            if ui.add(enhanced_glow_button("Connect Ports", &self.theme, GlowButtonStyle::Primary))
+                                .on_hover_text("Connect to system capture/playback ports")
+                                .clicked()
+                            {
+                                jack_connect_clicked = true;
+                            }
+                        });
+
+                        // Port list (collapsed by default)
+                        ui.add_space(4.0);
+                        egui::CollapsingHeader::new(
+                            egui::RichText::new("Available Ports")
+                                .size(11.0)
+                                .color(self.theme.text_muted)
+                        ).show(ui, |ui| {
+                            if !jack_capture.is_empty() {
+                                ui.label(egui::RichText::new("Capture:")
+                                    .size(10.0).color(self.theme.text_muted));
+                                for port in jack_capture.iter().take(8) {
+                                    ui.label(egui::RichText::new(format!("  {}", port))
+                                        .size(10.0).color(self.theme.text_secondary));
+                                }
+                            }
+
+                            if !jack_playback.is_empty() {
+                                ui.add_space(4.0);
+                                ui.label(egui::RichText::new("Playback:")
+                                    .size(10.0).color(self.theme.text_muted));
+                                for port in jack_playback.iter().take(8) {
+                                    ui.label(egui::RichText::new(format!("  {}", port))
+                                        .size(10.0).color(self.theme.text_secondary));
+                                }
+                            }
+
+                            if jack_capture.is_empty() && jack_playback.is_empty() {
+                                ui.label(egui::RichText::new("No ports available")
+                                    .size(10.0).italics().color(self.theme.text_muted));
+                            }
+                        });
+                    } else if self.jack_client.is_some() {
+                        ui.label(egui::RichText::new("JACK server not running")
+                            .size(11.0).italics().color(self.theme.text_muted));
+                        ui.label(egui::RichText::new("Using PipeWire/ALSA backend")
+                            .size(10.0).color(self.theme.text_muted));
+                    } else {
+                        ui.label(egui::RichText::new("JACK not available")
+                            .size(11.0).italics().color(self.theme.text_muted));
+                    }
+
+                    // Apply deferred JACK actions after borrow ends
+                    if jack_processing_changed
+                        && let Some(ref jack) = self.jack_client
+                    {
+                        jack.set_processing_enabled(self.jack_processing_enabled);
+                    }
+                    if jack_connect_clicked
+                        && let Some(ref jack) = self.jack_client
+                    {
+                        match jack.connect_default_ports() {
+                            Ok(()) => self.add_notification(
+                                "JACK ports connected", NotificationLevel::Success),
+                            Err(e) => self.add_notification(
+                                format!("JACK connect failed: {}", e), NotificationLevel::Error),
+                        }
+                    }
                 });
 
             ui.add_space(16.0);
@@ -761,11 +1039,10 @@ impl super::PhantomlinkApp {
                         .map(|g| g.is_enabled())
                         .unwrap_or(false);
 
-                    if ui.checkbox(&mut enabled, "Enable AI Noise Suppression").changed() {
-                        if let Some(ref mut gw) = self.ghostwave {
+                    if ui.checkbox(&mut enabled, "Enable AI Noise Suppression").changed()
+                        && let Some(ref mut gw) = self.ghostwave {
                             gw.set_enabled(enabled);
                         }
-                    }
 
                     if enabled && self.ghostwave.is_some() {
                         ui.add_space(12.0);
@@ -816,11 +1093,10 @@ impl super::PhantomlinkApp {
                                 .show_value(true)
                                 .custom_formatter(|v, _| format!("{:.0}%", v * 100.0));
 
-                            if ui.add(slider).changed() {
-                                if let Some(ref mut gw) = self.ghostwave {
+                            if ui.add(slider).changed()
+                                && let Some(ref mut gw) = self.ghostwave {
                                     let _ = gw.set_noise_strength(self.ghostwave_strength);
                                 }
-                            }
                         });
 
                         ui.add_space(8.0);
@@ -838,11 +1114,9 @@ impl super::PhantomlinkApp {
                             if ui.checkbox(&mut self.echo_cancellation_enabled, "Echo Cancellation (AEC)")
                                 .on_hover_text("Removes speaker audio from microphone input")
                                 .changed()
-                            {
-                                if let Some(ref mut gw) = self.ghostwave {
+                                && let Some(ref mut gw) = self.ghostwave {
                                     gw.set_echo_cancellation(self.echo_cancellation_enabled);
                                 }
-                            }
                         });
 
                         if self.echo_cancellation_enabled {
@@ -851,6 +1125,44 @@ impl super::PhantomlinkApp {
                                 .italics()
                                 .color(self.theme.text_muted));
                         }
+
+                        ui.add_space(12.0);
+
+                        // Denoiser backend selector
+                        ui.label(egui::RichText::new("Denoiser Backend:")
+                            .size(13.0)
+                            .color(self.theme.text_primary));
+
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            for backend in crate::ghostwave_integration::DenoiserBackend::all() {
+                                let is_selected = self.ghostwave_denoiser_backend == *backend;
+
+                                let button = egui::Button::new(
+                                    egui::RichText::new(backend.name())
+                                        .size(11.0)
+                                        .color(if is_selected {
+                                            self.theme.bg_dark
+                                        } else {
+                                            self.theme.text_secondary
+                                        })
+                                )
+                                .fill(if is_selected {
+                                    self.theme.accent_primary
+                                } else {
+                                    self.theme.input_bg
+                                })
+                                .rounding(egui::Rounding::same(4.0));
+
+                                if ui.add(button).on_hover_text(backend.description()).clicked() {
+                                    self.ghostwave_denoiser_backend = *backend;
+                                    if let Some(ref mut gw) = self.ghostwave {
+                                        gw.set_denoiser_backend(*backend);
+                                    }
+                                }
+                            }
+                        });
 
                         ui.add_space(12.0);
 
@@ -956,25 +1268,22 @@ impl super::PhantomlinkApp {
                     ui.add_space(8.0);
 
                     // Restart GPU button (shown when in fallback or for manual reset)
-                    if let Some(ref gw) = self.ghostwave {
-                        if gw.get_gpu_fallback().fallback_active || !gw.is_rtx_active() {
-                            if ui.add(enhanced_glow_button("🔄 Restart GPU", &self.theme, GlowButtonStyle::Warning))
-                                .on_hover_text("Re-initialize GPU processing")
-                                .clicked()
-                            {
-                                if let Some(ref mut gw) = self.ghostwave {
-                                    match gw.restart_gpu() {
-                                        Ok(()) => {
-                                            self.add_notification("GPU processing restarted", NotificationLevel::Success);
-                                        }
-                                        Err(e) => {
-                                            self.add_notification(&format!("GPU restart failed: {}", e), NotificationLevel::Error);
-                                        }
-                                    }
+                    let needs_restart = self.ghostwave.as_ref()
+                        .is_some_and(|gw| gw.get_gpu_fallback().fallback_active || !gw.is_rtx_active());
+                    if needs_restart
+                        && ui.add(enhanced_glow_button("🔄 Restart GPU", &self.theme, GlowButtonStyle::Warning))
+                            .on_hover_text("Re-initialize GPU processing")
+                            .clicked()
+                        && let Some(ref mut gw) = self.ghostwave {
+                            match gw.restart_gpu() {
+                                Ok(()) => {
+                                    self.add_notification("GPU processing restarted", NotificationLevel::Success);
+                                }
+                                Err(e) => {
+                                    self.add_notification(format!("GPU restart failed: {}", e), NotificationLevel::Error);
                                 }
                             }
                         }
-                    }
 
                     ui.add_space(12.0);
 
@@ -990,18 +1299,21 @@ impl super::PhantomlinkApp {
         // Scarlett Solo Hardware Control Panel
         egui::Frame::none()
             .fill(self.theme.translucent_panel_bg())
-            .stroke(egui::Stroke::new(1.0, self.theme.error.linear_multiply(0.6)))
+            .stroke(egui::Stroke::new(
+                1.0,
+                self.theme.error.linear_multiply(0.6),
+            ))
             .rounding(egui::Rounding::same(16.0))
             .inner_margin(egui::Margin::same(20.0))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("🎛")
-                        .size(22.0)
-                        .color(self.theme.error));
-                    ui.label(egui::RichText::new("Scarlett Solo 4th Gen")
-                        .size(18.0)
-                        .strong()
-                        .color(self.theme.error));
+                    ui.label(egui::RichText::new("🎛").size(22.0).color(self.theme.error));
+                    ui.label(
+                        egui::RichText::new("Scarlett Solo 4th Gen")
+                            .size(18.0)
+                            .strong()
+                            .color(self.theme.error),
+                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // Connection status
@@ -1009,17 +1321,23 @@ impl super::PhantomlinkApp {
                         let usb_connected = crate::scarlett::is_scarlett_solo_connected();
 
                         if connected {
-                            ui.label(egui::RichText::new("● Connected")
-                                .size(12.0)
-                                .color(self.theme.success));
+                            ui.label(
+                                egui::RichText::new("● Connected")
+                                    .size(12.0)
+                                    .color(self.theme.success),
+                            );
                         } else if usb_connected {
-                            ui.label(egui::RichText::new("● USB Detected")
-                                .size(12.0)
-                                .color(self.theme.warning));
+                            ui.label(
+                                egui::RichText::new("● USB Detected")
+                                    .size(12.0)
+                                    .color(self.theme.warning),
+                            );
                         } else {
-                            ui.label(egui::RichText::new("○ Not Connected")
-                                .size(12.0)
-                                .color(self.theme.text_muted));
+                            ui.label(
+                                egui::RichText::new("○ Not Connected")
+                                    .size(12.0)
+                                    .color(self.theme.text_muted),
+                            );
                         }
                     });
                 });
@@ -1050,34 +1368,55 @@ impl super::PhantomlinkApp {
                     ui.horizontal(|ui| {
                         // Left: Input Controls
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new("Input Controls")
-                                .size(14.0)
-                                .strong()
-                                .color(theme_text_primary));
+                            ui.label(
+                                egui::RichText::new("Input Controls")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(theme_text_primary),
+                            );
 
                             ui.add_space(8.0);
 
                             // 48V Phantom Power
                             ui.horizontal(|ui| {
-                                let phantom_label = if phantom_power { "⚡ 48V ON" } else { "48V OFF" };
+                                let phantom_label = if phantom_power {
+                                    "⚡ 48V ON"
+                                } else {
+                                    "48V OFF"
+                                };
                                 let phantom_color = if phantom_power {
                                     theme_error
                                 } else {
                                     theme_text_muted
                                 };
 
-                                if ui.add(egui::Button::new(
-                                    egui::RichText::new(phantom_label)
-                                        .size(12.0)
-                                        .color(if phantom_power { theme_bg_dark } else { phantom_color })
-                                ).fill(if phantom_power { theme_error } else { theme_input_bg })
-                                 .rounding(egui::Rounding::same(4.0)))
-                                .on_hover_text("Toggle 48V phantom power for condenser microphones")
-                                .clicked()
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new(phantom_label).size(12.0).color(
+                                                if phantom_power {
+                                                    theme_bg_dark
+                                                } else {
+                                                    phantom_color
+                                                },
+                                            ),
+                                        )
+                                        .fill(if phantom_power {
+                                            theme_error
+                                        } else {
+                                            theme_input_bg
+                                        })
+                                        .rounding(egui::Rounding::same(4.0)),
+                                    )
+                                    .on_hover_text(
+                                        "Toggle 48V phantom power for condenser microphones",
+                                    )
+                                    .clicked()
                                 {
                                     phantom_power = !phantom_power;
                                     if let Err(e) = scarlett.set_phantom_power(phantom_power) {
-                                        scarlett_errors.push(format!("Failed to set phantom power: {}", e));
+                                        scarlett_errors
+                                            .push(format!("Failed to set phantom power: {}", e));
                                     }
                                 }
                             });
@@ -1103,12 +1442,16 @@ impl super::PhantomlinkApp {
                             // Input Level (Line/Inst)
                             ui.horizontal(|ui| {
                                 ui.label("Input 1:");
-                                for level in &[crate::scarlett::InputLevel::Line, crate::scarlett::InputLevel::Instrument] {
+                                for level in &[
+                                    crate::scarlett::InputLevel::Line,
+                                    crate::scarlett::InputLevel::Instrument,
+                                ] {
                                     let selected = input_level == *level;
                                     if ui.selectable_label(selected, level.name()).clicked() {
                                         input_level = *level;
                                         if let Err(e) = scarlett.set_input_level(*level) {
-                                            scarlett_errors.push(format!("Input level error: {}", e));
+                                            scarlett_errors
+                                                .push(format!("Input level error: {}", e));
                                         }
                                     }
                                 }
@@ -1119,29 +1462,33 @@ impl super::PhantomlinkApp {
 
                         // Right: Monitoring & Levels
                         ui.vertical(|ui| {
-                            ui.label(egui::RichText::new("Monitoring")
-                                .size(14.0)
-                                .strong()
-                                .color(theme_text_primary));
+                            ui.label(
+                                egui::RichText::new("Monitoring")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(theme_text_primary),
+                            );
 
                             ui.add_space(8.0);
 
                             // Direct Monitor toggle
-                            if ui.checkbox(&mut direct_monitor, "Direct Monitor")
+                            if ui
+                                .checkbox(&mut direct_monitor, "Direct Monitor")
                                 .on_hover_text("Monitor inputs directly with zero latency")
                                 .changed()
+                                && let Err(e) = scarlett.set_direct_monitor(direct_monitor)
                             {
-                                if let Err(e) = scarlett.set_direct_monitor(direct_monitor) {
-                                    scarlett_errors.push(format!("Direct monitor error: {}", e));
-                                }
+                                scarlett_errors.push(format!("Direct monitor error: {}", e));
                             }
 
                             ui.add_space(8.0);
 
                             // Input level meters
-                            ui.label(egui::RichText::new("Input Levels:")
-                                .size(11.0)
-                                .color(theme_text_secondary));
+                            ui.label(
+                                egui::RichText::new("Input Levels:")
+                                    .size(11.0)
+                                    .color(theme_text_secondary),
+                            );
 
                             ui.horizontal(|ui| {
                                 // Input 1 (Line/Inst)
@@ -1149,15 +1496,23 @@ impl super::PhantomlinkApp {
                                 let level1_db = level_meters.get_db(0);
                                 ui.vertical(|ui| {
                                     ui.label("In 1");
-                                    let bar_color = if level1 > 0.9 { theme_error }
-                                        else if level1 > 0.7 { theme_warning }
-                                        else { theme_success };
-                                    ui.add(egui::ProgressBar::new(level1)
-                                        .fill(bar_color)
-                                        .desired_width(60.0));
-                                    ui.label(egui::RichText::new(format!("{:.0}dB", level1_db))
-                                        .size(9.0)
-                                        .color(theme_text_muted));
+                                    let bar_color = if level1 > 0.9 {
+                                        theme_error
+                                    } else if level1 > 0.7 {
+                                        theme_warning
+                                    } else {
+                                        theme_success
+                                    };
+                                    ui.add(
+                                        egui::ProgressBar::new(level1)
+                                            .fill(bar_color)
+                                            .desired_width(60.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.0}dB", level1_db))
+                                            .size(9.0)
+                                            .color(theme_text_muted),
+                                    );
                                 });
 
                                 // Input 2 (XLR/Mic)
@@ -1165,15 +1520,23 @@ impl super::PhantomlinkApp {
                                 let level2_db = level_meters.get_db(1);
                                 ui.vertical(|ui| {
                                     ui.label("In 2");
-                                    let bar_color = if level2 > 0.9 { theme_error }
-                                        else if level2 > 0.7 { theme_warning }
-                                        else { theme_success };
-                                    ui.add(egui::ProgressBar::new(level2)
-                                        .fill(bar_color)
-                                        .desired_width(60.0));
-                                    ui.label(egui::RichText::new(format!("{:.0}dB", level2_db))
-                                        .size(9.0)
-                                        .color(theme_text_muted));
+                                    let bar_color = if level2 > 0.9 {
+                                        theme_error
+                                    } else if level2 > 0.7 {
+                                        theme_warning
+                                    } else {
+                                        theme_success
+                                    };
+                                    ui.add(
+                                        egui::ProgressBar::new(level2)
+                                            .fill(bar_color)
+                                            .desired_width(60.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.0}dB", level2_db))
+                                            .size(9.0)
+                                            .color(theme_text_muted),
+                                    );
                                 });
                             });
                         });
@@ -1186,13 +1549,24 @@ impl super::PhantomlinkApp {
                     self.scarlett_direct_monitor = direct_monitor;
                 } else {
                     ui.add_space(12.0);
-                    ui.label(egui::RichText::new("Connect your Scarlett Solo 4th Gen to enable hardware controls")
+                    ui.label(
+                        egui::RichText::new(
+                            "Connect your Scarlett Solo 4th Gen to enable hardware controls",
+                        )
                         .size(12.0)
                         .italics()
-                        .color(self.theme.text_muted));
+                        .color(self.theme.text_muted),
+                    );
 
                     ui.add_space(8.0);
-                    if ui.add(enhanced_glow_button("🔄 Detect Device", &self.theme, GlowButtonStyle::Primary)).clicked() {
+                    if ui
+                        .add(enhanced_glow_button(
+                            "🔄 Detect Device",
+                            &self.theme,
+                            GlowButtonStyle::Primary,
+                        ))
+                        .clicked()
+                    {
                         match crate::scarlett::ScarlettSolo::new() {
                             Ok(s) => {
                                 self.scarlett_phantom_power = s.get_phantom_power();
@@ -1200,10 +1574,16 @@ impl super::PhantomlinkApp {
                                 self.scarlett_input_level = s.get_input_level();
                                 self.scarlett_direct_monitor = s.get_direct_monitor();
                                 self.scarlett = Some(s);
-                                self.add_notification("Scarlett Solo detected!", NotificationLevel::Success);
+                                self.add_notification(
+                                    "Scarlett Solo detected!",
+                                    NotificationLevel::Success,
+                                );
                             }
                             Err(e) => {
-                                self.add_notification(&format!("Detection failed: {}", e), NotificationLevel::Error);
+                                self.add_notification(
+                                    format!("Detection failed: {}", e),
+                                    NotificationLevel::Error,
+                                );
                             }
                         }
                     }
@@ -1225,24 +1605,50 @@ impl super::PhantomlinkApp {
             .inner_margin(egui::Margin::same(16.0))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.add(enhanced_glow_button("💾 Save Settings", &self.theme, GlowButtonStyle::Success)).clicked() {
+                    if ui
+                        .add(enhanced_glow_button(
+                            "💾 Save Settings",
+                            &self.theme,
+                            GlowButtonStyle::Success,
+                        ))
+                        .clicked()
+                    {
                         self.save_configuration();
                     }
 
-                    if ui.add(enhanced_glow_button("🔄 Reset to Defaults", &self.theme, GlowButtonStyle::Warning)).clicked() {
+                    if ui
+                        .add(enhanced_glow_button(
+                            "🔄 Reset to Defaults",
+                            &self.theme,
+                            GlowButtonStyle::Warning,
+                        ))
+                        .clicked()
+                    {
                         self.theme_preset = ThemePreset::default();
                         self.theme = WavelinkTheme::with_preset(self.theme_preset);
-                        self.add_notification("Settings reset to defaults", NotificationLevel::Info);
+                        self.add_notification(
+                            "Settings reset to defaults",
+                            NotificationLevel::Info,
+                        );
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("PhantomLink v0.3.0 + GhostWave v0.2.0")
-                            .size(11.0)
-                            .color(self.theme.text_muted));
+                        ui.label(
+                            egui::RichText::new("PhantomLink v0.4.0 + GhostWave v0.3.0")
+                                .size(11.0)
+                                .color(self.theme.text_muted),
+                        );
 
                         ui.add_space(16.0);
 
-                        if ui.add(enhanced_glow_button("❓ Help", &self.theme, GlowButtonStyle::Secondary)).clicked() {
+                        if ui
+                            .add(enhanced_glow_button(
+                                "❓ Help",
+                                &self.theme,
+                                GlowButtonStyle::Secondary,
+                            ))
+                            .clicked()
+                        {
                             self.show_help_overlay = true;
                         }
                     });

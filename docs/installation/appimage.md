@@ -6,19 +6,19 @@ AppImage is a universal Linux package format that works on any distribution with
 
 Download the latest AppImage from the releases page:
 ```bash
-wget https://github.com/ghostkellz/phantomlink/releases/latest/download/PhantomLink-0.2.0-x86_64.AppImage
+wget https://github.com/ghostkellz/phantomlink/releases/latest/download/PhantomLink-0.4.0-x86_64.AppImage
 ```
 
 ## Make Executable
 
 ```bash
-chmod +x PhantomLink-0.2.0-x86_64.AppImage
+chmod +x PhantomLink-0.4.0-x86_64.AppImage
 ```
 
 ## Run
 
 ```bash
-./PhantomLink-0.2.0-x86_64.AppImage
+./PhantomLink-0.4.0-x86_64.AppImage
 ```
 
 ## Optional: System Integration
@@ -80,7 +80,7 @@ The AppImage bundles most dependencies, but you may need:
 
 ### Required (system libraries)
 - ALSA library (usually pre-installed)
-- GTK3 (usually pre-installed)
+- libxkbcommon (usually pre-installed)
 
 ### For RTX Acceleration
 Install your distro's NVIDIA driver:

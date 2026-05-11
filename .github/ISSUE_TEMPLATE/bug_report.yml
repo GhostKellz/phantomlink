@@ -1,0 +1,94 @@
+name: Bug Report
+description: Report a bug in PhantomLink
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear and concise description of the bug.
+      placeholder: Describe the issue...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Start PhantomLink with...
+        2. Configure...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs Actual Behavior
+      description: What you expected to happen and what actually happened.
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: PhantomLink Version
+      description: Output of `phantomlink --version` or the version you installed.
+      placeholder: e.g. 0.4.0
+    validations:
+      required: false
+
+  - type: input
+    id: distro
+    attributes:
+      label: Linux Distribution
+      placeholder: e.g. Arch Linux, Ubuntu 24.04, Fedora 40
+    validations:
+      required: false
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel Version
+      description: Output of `uname -r`.
+      placeholder: e.g. 6.9.1-arch1-1
+    validations:
+      required: false
+
+  - type: dropdown
+    id: audio-backend
+    attributes:
+      label: Audio Backend
+      options:
+        - PipeWire
+        - ALSA
+        - JACK
+        - PulseAudio
+        - Other
+    validations:
+      required: false
+
+  - type: input
+    id: audio-interface
+    attributes:
+      label: Audio Interface
+      description: Your audio hardware if relevant.
+      placeholder: e.g. Focusrite Scarlett Solo Gen 3
+    validations:
+      required: false
+
+  - type: textarea
+    id: gpu-info
+    attributes:
+      label: GPU Info
+      description: If the issue involves GhostWave or RTX Voice denoising, provide GPU model and driver version.
+      placeholder: |
+        GPU: NVIDIA RTX 4090
+        Driver: 555.42.02
+    validations:
+      required: false

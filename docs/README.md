@@ -18,9 +18,9 @@ PhantomLink is a professional audio mixer and interface control application for 
 - [AppImage](installation/appimage.md)
 
 ### Technical Documentation
-- [Advanced Denoising](ADVANCED_DENOISING.md)
-- [GUI Architecture](GUI_REDESIGN.md)
-- [VST Plugin Support](VST_IMPLEMENTATION.md)
+- [Advanced Denoising](advanced_denoising.md)
+- [Troubleshooting](troubleshooting.md)
+- [VST Plugin Support](vst_implementation.md)
 
 ## Quick Start
 
@@ -76,11 +76,7 @@ chmod +x PhantomLink-*.AppImage
 - Application audio routing
 
 ### Themes
-- Tokyo Night
-- Catppuccin Mocha
-- Dracula
-- Scarlett (Focusrite-inspired)
-- Wavelink (Elgato-inspired)
+- Tokyo Night (Night / Moon / Storm variants)
 
 ## License
 

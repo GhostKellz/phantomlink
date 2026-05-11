@@ -46,19 +46,19 @@ sudo dnf install phantomlink
 ### Ubuntu / Debian
 ```bash
 # Download the .deb package from releases
-sudo apt install ./phantomlink_0.2.0_amd64.deb
+sudo apt install ./phantomlink_0.4.0_amd64.deb
 ```
 
 ### Pop!_OS
 ```bash
 # Pop!_OS uses apt
-sudo apt install ./phantomlink_0.2.0_amd64.deb
+sudo apt install ./phantomlink_0.4.0_amd64.deb
 ```
 
 ### AppImage (Universal)
 ```bash
-chmod +x PhantomLink-0.2.0-x86_64.AppImage
-./PhantomLink-0.2.0-x86_64.AppImage
+chmod +x PhantomLink-0.4.0-x86_64.AppImage
+./PhantomLink-0.4.0-x86_64.AppImage
 ```
 
 ## First Launch

@@ -1,4 +1,4 @@
-version: 1
+version: 0.4.0
 
 AppDir:
   path: ./AppDir
@@ -7,7 +7,7 @@ AppDir:
     id: sh.ghostkellz.phantomlink
     name: PhantomLink
     icon: phantomlink
-    version: 0.2.0
+    version: 0.4.0
     exec: usr/bin/phantomlink
 
   apt:
@@ -19,7 +19,6 @@ AppDir:
     include:
       - libasound2
       - libpipewire-0.3-0
-      - libgtk-3-0
       - libxkbcommon0
       - libxcb1
 

@@ -7,12 +7,10 @@
 
 #![allow(dead_code)] // Complete denoising API with multiple backends
 
-use std::sync::{Arc, Mutex};
-#[cfg(feature = "deep-learning")]
-use std::path::PathBuf;
 use anyhow::Result;
-use realfft::{RealFftPlanner, RealToComplex, ComplexToReal};
 use num_complex::Complex32;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use std::sync::{Arc, Mutex};
 
 /// Denoising modes available in the advanced system
 #[derive(Debug, Clone, PartialEq)]
@@ -24,7 +22,7 @@ pub enum DenoisingMode {
     /// All denoising tiers enabled
     Maximum,
     /// Custom configuration
-    Custom { 
+    Custom {
         use_rnnoise: bool,
         use_deep_learning: bool,
         use_spectral: bool,
@@ -52,28 +50,28 @@ pub struct DenoisingMetrics {
 pub trait AdvancedDenoiser: Send + Sync {
     /// Process a frame of audio data
     fn process_frame(&mut self, input: &[f32]) -> Result<Vec<f32>>;
-    
+
     /// Set the denoising mode
     fn set_mode(&mut self, mode: DenoisingMode) -> Result<()>;
-    
+
     /// Get current mode
     fn get_mode(&self) -> DenoisingMode;
-    
+
     /// Get processing latency in milliseconds
     fn get_latency(&self) -> f32;
-    
+
     /// Get CPU usage percentage (0.0 to 100.0)
     fn get_cpu_usage(&self) -> f32;
-    
+
     /// Get current performance metrics
     fn get_metrics(&self) -> DenoisingMetrics;
-    
+
     /// Check if the denoiser is ready to process
     fn is_ready(&self) -> bool;
-    
+
     /// Enable/disable the denoiser
     fn set_enabled(&mut self, enabled: bool);
-    
+
     /// Check if the denoiser is enabled
     fn is_enabled(&self) -> bool;
 }
@@ -143,109 +141,6 @@ pub struct ModelInfo {
 }
 
 // ============================================================================
-// ONNX Deep Learning Denoiser Implementation
-// ============================================================================
-// Note: The full ONNX implementation requires the `deep-learning` feature
-// and the ort crate. When models are available, this provides GPU-accelerated
-// inference using CUDA on NVIDIA GPUs.
-
-#[cfg(feature = "deep-learning")]
-pub use onnx_denoiser::OnnxDenoiser;
-
-#[cfg(feature = "deep-learning")]
-mod onnx_denoiser {
-    use super::*;
-
-    /// ONNX-based deep learning denoiser
-    /// Supports models like Facebook Denoiser, RNNoise-NG, etc.
-    pub struct OnnxDenoiser {
-        model_info: ModelInfo,
-        frame_size: usize,
-        sample_rate: u32,
-        input_buffer: Vec<f32>,
-        output_buffer: Vec<f32>,
-        last_latency_ms: f32,
-        gpu_accelerated: bool,
-    }
-
-    impl OnnxDenoiser {
-        /// Create from built-in model
-        pub fn from_builtin(model_name: &str, sample_rate: u32, frame_size: usize) -> Result<Self> {
-            // Look for models in standard locations
-            let model_paths = [
-                PathBuf::from("/usr/share/phantomlink/models"),
-                dirs::data_dir().unwrap_or_default().join("phantomlink/models"),
-                PathBuf::from("./models"),
-            ];
-
-            let model_filename = format!("{}.onnx", model_name);
-
-            for base_path in &model_paths {
-                let model_path = base_path.join(&model_filename);
-                if model_path.exists() {
-                    let model_size = std::fs::metadata(&model_path)
-                        .map(|m| m.len() as f32 / (1024.0 * 1024.0))
-                        .unwrap_or(0.0);
-
-                    return Ok(Self {
-                        model_info: ModelInfo {
-                            name: model_name.to_string(),
-                            version: "1.0".to_string(),
-                            size_mb: model_size,
-                            target_latency_ms: (frame_size as f32 / sample_rate as f32) * 1000.0,
-                            supported_sample_rates: vec![16000, 44100, 48000],
-                        },
-                        frame_size,
-                        sample_rate,
-                        input_buffer: vec![0.0; frame_size],
-                        output_buffer: vec![0.0; frame_size],
-                        last_latency_ms: 0.0,
-                        gpu_accelerated: false, // Would be true with full ONNX runtime
-                    });
-                }
-            }
-
-            anyhow::bail!("Model not found: {}", model_name)
-        }
-
-        pub fn is_gpu_accelerated(&self) -> bool {
-            self.gpu_accelerated
-        }
-
-        pub fn get_model_info(&self) -> ModelInfo {
-            self.model_info.clone()
-        }
-    }
-
-    impl DeepLearningDenoiser for OnnxDenoiser {
-        fn process(&mut self, input: &[f32]) -> Result<Vec<f32>> {
-            // Stub implementation - passes through audio
-            // Full implementation would use ONNX Runtime for inference
-            let start = std::time::Instant::now();
-
-            let input_len = input.len().min(self.frame_size);
-            self.output_buffer.clear();
-            self.output_buffer.extend_from_slice(&input[..input_len]);
-
-            self.last_latency_ms = start.elapsed().as_secs_f32() * 1000.0;
-            Ok(self.output_buffer.clone())
-        }
-
-        fn get_latency(&self) -> f32 {
-            self.last_latency_ms
-        }
-
-        fn is_gpu_accelerated(&self) -> bool {
-            self.gpu_accelerated
-        }
-
-        fn get_model_info(&self) -> ModelInfo {
-            self.model_info.clone()
-        }
-    }
-}
-
-// ============================================================================
 // Wiener Filter Spectral Denoiser Implementation
 // ============================================================================
 
@@ -299,7 +194,7 @@ impl WienerDenoiser {
             output_buffer: vec![0.0; fft_size],
             spectrum: vec![Complex32::new(0.0, 0.0); fft_size / 2 + 1],
             noise_profile: vec![0.001; fft_size / 2 + 1], // Default noise floor
-            noise_floor: -60.0, // dB
+            noise_floor: -60.0,                           // dB
             smoothing_factor: 0.98,
             noise_reduction_db: 0.0,
             overlap_buffer: vec![0.0; fft_size],
@@ -389,8 +284,8 @@ impl SpectralDenoiser for WienerDenoiser {
 
         // Overlap-add
         let mut output = vec![0.0; input_len];
-        for i in 0..input_len {
-            output[i] = self.output_buffer[i] + self.overlap_buffer[i];
+        for (i, out) in output.iter_mut().enumerate().take(input_len) {
+            *out = self.output_buffer[i] + self.overlap_buffer[i];
         }
 
         // Store overlap for next frame
@@ -431,11 +326,11 @@ impl PerformanceMonitor {
             last_update: std::time::Instant::now(),
         }
     }
-    
+
     fn update(&mut self, cpu_usage: f32, latency: f32) {
         self.cpu_history.push(cpu_usage);
         self.latency_history.push(latency);
-        
+
         // Keep only last 100 measurements
         if self.cpu_history.len() > 100 {
             self.cpu_history.remove(0);
@@ -443,10 +338,10 @@ impl PerformanceMonitor {
         if self.latency_history.len() > 100 {
             self.latency_history.remove(0);
         }
-        
+
         self.last_update = std::time::Instant::now();
     }
-    
+
     fn average_cpu(&self) -> f32 {
         if self.cpu_history.is_empty() {
             0.0
@@ -454,7 +349,7 @@ impl PerformanceMonitor {
             self.cpu_history.iter().sum::<f32>() / self.cpu_history.len() as f32
         }
     }
-    
+
     fn average_latency(&self) -> f32 {
         if self.latency_history.is_empty() {
             0.0
@@ -462,7 +357,7 @@ impl PerformanceMonitor {
             self.latency_history.iter().sum::<f32>() / self.latency_history.len() as f32
         }
     }
-    
+
     fn should_adapt(&self) -> bool {
         self.last_update.elapsed().as_secs() >= 5 // Adapt every 5 seconds
     }
@@ -484,11 +379,11 @@ impl AdvancedDenoisingSystem {
             },
             performance_monitor: PerformanceMonitor::new(),
         };
-        
+
         system.initialize_denoisers()?;
         Ok(system)
     }
-    
+
     fn initialize_denoisers(&mut self) -> Result<()> {
         // Initialize RNNoise denoiser
         let mut rnnoise = crate::rnnoise::Rnnoise::new();
@@ -506,57 +401,17 @@ impl AdvancedDenoisingSystem {
             }
         }
 
-        // Initialize ONNX deep learning denoiser if available
-        #[cfg(feature = "deep-learning")]
-        {
-            // Try to load built-in models in order of preference
-            let models_to_try = ["rnnoise-ng", "denoiser", "nsnet2"];
-
-            for model_name in &models_to_try {
-                match onnx_denoiser::OnnxDenoiser::from_builtin(
-                    model_name,
-                    self.config.sample_rate,
-                    self.config.frame_size,
-                ) {
-                    Ok(denoiser) => {
-                        let info = denoiser.get_model_info();
-                        log::info!(
-                            "Deep learning denoiser loaded: {} v{} ({:.1} MB, GPU: {})",
-                            info.name,
-                            info.version,
-                            info.size_mb,
-                            denoiser.is_gpu_accelerated()
-                        );
-                        self.deep_learning_denoiser = Some(Box::new(denoiser));
-                        break;
-                    }
-                    Err(e) => {
-                        log::debug!("Model {} not available: {}", model_name, e);
-                    }
-                }
-            }
-
-            if self.deep_learning_denoiser.is_none() {
-                log::info!("No ONNX denoising models found, using RNNoise + Spectral only");
-            }
-        }
-
-        #[cfg(not(feature = "deep-learning"))]
-        {
-            log::info!("Deep learning denoiser disabled (feature not compiled)");
-        }
-
         Ok(())
     }
-    
+
     fn adaptive_mode_adjustment(&mut self) {
         if !self.config.adaptive_mode || !self.performance_monitor.should_adapt() {
             return;
         }
-        
+
         let avg_cpu = self.performance_monitor.average_cpu();
         let avg_latency = self.performance_monitor.average_latency();
-        
+
         // If we're exceeding limits, downgrade mode
         if avg_cpu > self.config.max_cpu_percent || avg_latency > self.config.max_latency_ms {
             match self.config.mode {
@@ -572,7 +427,9 @@ impl AdvancedDenoisingSystem {
             }
         }
         // If we have headroom, try upgrading
-        else if avg_cpu < self.config.max_cpu_percent * 0.7 && avg_latency < self.config.max_latency_ms * 0.7 {
+        else if avg_cpu < self.config.max_cpu_percent * 0.7
+            && avg_latency < self.config.max_latency_ms * 0.7
+        {
             match self.config.mode {
                 DenoisingMode::Basic => {
                     self.config.mode = DenoisingMode::Enhanced;
@@ -593,10 +450,10 @@ impl AdvancedDenoiser for AdvancedDenoisingSystem {
         if !self.enabled {
             return Ok(input.to_vec());
         }
-        
+
         let start_time = std::time::Instant::now();
         let mut output = input.to_vec();
-        
+
         // Process based on current mode
         match &self.config.mode {
             DenoisingMode::Basic => {
@@ -609,7 +466,7 @@ impl AdvancedDenoiser for AdvancedDenoisingSystem {
                 if let Some(ref rnnoise) = self.rnnoise_denoiser {
                     output = rnnoise.process(&output);
                 }
-                
+
                 // Second pass: Deep learning (when available)
                 if let Some(ref mut deep_learning) = self.deep_learning_denoiser {
                     output = deep_learning.process(&output)?;
@@ -620,82 +477,82 @@ impl AdvancedDenoiser for AdvancedDenoisingSystem {
                 if let Some(ref rnnoise) = self.rnnoise_denoiser {
                     output = rnnoise.process(&output);
                 }
-                
+
                 // Second pass: Deep learning (when available)
                 if let Some(ref mut deep_learning) = self.deep_learning_denoiser {
                     output = deep_learning.process(&output)?;
                 }
-                
+
                 // Third pass: Spectral enhancement (when available)
                 if let Some(ref mut spectral) = self.spectral_denoiser {
                     output = spectral.process(&output)?;
                 }
             }
-            DenoisingMode::Custom { use_rnnoise, use_deep_learning, use_spectral } => {
-                if *use_rnnoise {
-                    if let Some(ref rnnoise) = self.rnnoise_denoiser {
-                        output = rnnoise.process(&output);
-                    }
+            DenoisingMode::Custom {
+                use_rnnoise,
+                use_deep_learning,
+                use_spectral,
+            } => {
+                if *use_rnnoise && let Some(ref rnnoise) = self.rnnoise_denoiser {
+                    output = rnnoise.process(&output);
                 }
-                
-                if *use_deep_learning {
-                    if let Some(ref mut deep_learning) = self.deep_learning_denoiser {
-                        output = deep_learning.process(&output)?;
-                    }
+
+                if *use_deep_learning
+                    && let Some(ref mut deep_learning) = self.deep_learning_denoiser
+                {
+                    output = deep_learning.process(&output)?;
                 }
-                
-                if *use_spectral {
-                    if let Some(ref mut spectral) = self.spectral_denoiser {
-                        output = spectral.process(&output)?;
-                    }
+
+                if *use_spectral && let Some(ref mut spectral) = self.spectral_denoiser {
+                    output = spectral.process(&output)?;
                 }
             }
         }
-        
+
         // Update performance metrics
         let processing_time = start_time.elapsed().as_secs_f32() * 1000.0; // Convert to ms
         let cpu_usage = self.estimate_cpu_usage(processing_time);
-        
+
         self.metrics.latency_ms = processing_time;
         self.metrics.cpu_usage_percent = cpu_usage;
-        
+
         self.performance_monitor.update(cpu_usage, processing_time);
-        
+
         // Check for adaptive adjustments
         self.adaptive_mode_adjustment();
-        
+
         Ok(output)
     }
-    
+
     fn set_mode(&mut self, mode: DenoisingMode) -> Result<()> {
         self.config.mode = mode;
         Ok(())
     }
-    
+
     fn get_mode(&self) -> DenoisingMode {
         self.config.mode.clone()
     }
-    
+
     fn get_latency(&self) -> f32 {
         self.metrics.latency_ms
     }
-    
+
     fn get_cpu_usage(&self) -> f32 {
         self.metrics.cpu_usage_percent
     }
-    
+
     fn get_metrics(&self) -> DenoisingMetrics {
         self.metrics.clone()
     }
-    
+
     fn is_ready(&self) -> bool {
         self.rnnoise_denoiser.is_some()
     }
-    
+
     fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
-    
+
     fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -704,25 +561,26 @@ impl AdvancedDenoiser for AdvancedDenoisingSystem {
 impl AdvancedDenoisingSystem {
     /// Estimate CPU usage based on processing time
     fn estimate_cpu_usage(&self, processing_time_ms: f32) -> f32 {
-        let frame_duration_ms = (self.config.frame_size as f32 / self.config.sample_rate as f32) * 1000.0;
+        let frame_duration_ms =
+            (self.config.frame_size as f32 / self.config.sample_rate as f32) * 1000.0;
         (processing_time_ms / frame_duration_ms) * 100.0
     }
-    
+
     /// Get available denoising modes based on system capabilities
     pub fn get_available_modes(&self) -> Vec<DenoisingMode> {
         let mut modes = vec![DenoisingMode::Basic];
-        
+
         if self.deep_learning_denoiser.is_some() {
             modes.push(DenoisingMode::Enhanced);
         }
-        
+
         if self.spectral_denoiser.is_some() {
             modes.push(DenoisingMode::Maximum);
         }
-        
+
         modes
     }
-    
+
     /// Update configuration
     pub fn update_config(&mut self, config: AdvancedDenoisingConfig) -> Result<()> {
         self.config = config;

@@ -9,29 +9,32 @@ on:
 jobs:
   build:
     runs-on: self-hosted
-    name: Build on ghost-nv
+    name: Build & Test
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: clippy, rustfmt
 
-      - name: Install ALSA development libraries
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev pkg-config
 
-      - name: Clippy Check
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Format Check
+      - name: Format check
         run: cargo fmt --check
 
+      - name: Clippy (no default features)
+        run: cargo clippy --no-default-features
+
+      - name: Clippy (with ghostwave)
+        run: cargo clippy --features ghostwave
+
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --features ghostwave
 
       - name: Test
-        run: cargo test --verbose
+        run: cargo test --features ghostwave

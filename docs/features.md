@@ -56,7 +56,7 @@ RTX-accelerated AI denoising powered by GhostWave.
 #### XLR Studio
 - Optimized for XLR microphones
 - Lower suppression to preserve voice character
-- Ultra-low latency (~3ms)
+- Low latency (~10ms)
 - Best for: Recording, podcasting
 
 #### Streaming
@@ -152,19 +152,10 @@ Professional channel strips with:
 ## Themes
 
 ### Tokyo Night
-Dark theme with blue/purple accents. Calm, focused aesthetic.
-
-### Catppuccin Mocha
-Warm pastel dark theme. Popular in the Linux community.
-
-### Dracula
-Classic dark theme with purple/cyan accents.
-
-### Scarlett
-Focusrite-inspired theme with red accents on dark background.
-
-### Wavelink
-Elgato Wavelink-inspired theme with green accents.
+Tokyo Night theme family with three variants:
+- **Night**: Default dark theme with blue/purple accents. Calm, focused aesthetic.
+- **Moon**: Softer dark variant with muted tones.
+- **Storm**: Higher contrast dark variant.
 
 ---
 

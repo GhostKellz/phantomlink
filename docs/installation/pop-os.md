@@ -6,10 +6,10 @@ Pop!_OS is based on Ubuntu, so installation is similar with some Pop-specific co
 
 ```bash
 # Download the .deb package
-wget https://github.com/ghostkellz/phantomlink/releases/latest/download/phantomlink_0.2.0_amd64.deb
+wget https://github.com/ghostkellz/phantomlink/releases/latest/download/phantomlink_0.4.0_amd64.deb
 
 # Install using apt
-sudo apt install ./phantomlink_0.2.0_amd64.deb
+sudo apt install ./phantomlink_0.4.0_amd64.deb
 ```
 
 Or double-click the .deb file to install via Eddy (Pop's package installer).
@@ -19,7 +19,7 @@ Or double-click the .deb file to install via Eddy (Pop's package installer).
 Dependencies are automatically installed:
 - `libasound2` - ALSA library
 - `libpipewire-0.3-0` - PipeWire library
-- `libgtk-3-0` - GTK3 library
+- `libxkbcommon0` - Keyboard handling library
 
 ## NVIDIA Driver (Pop!_OS Advantage)
 
@@ -116,7 +116,7 @@ rm -rf ~/.local/share/phantomlink
 ```bash
 # Install build dependencies
 sudo apt install build-essential pkg-config libssl-dev \
-    libasound2-dev libpipewire-0.3-dev libgtk-3-dev
+    libasound2-dev libpipewire-0.3-dev libxkbcommon-dev libxcb1-dev libjack-jackd2-dev
 
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh

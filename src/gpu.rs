@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result};
 use libloading::{Library, Symbol};
-use std::ffi::{c_int, CStr};
+use std::ffi::{CStr, c_int};
 use std::sync::{Mutex, OnceLock};
 
 /// GPU architecture generation
@@ -41,7 +41,10 @@ impl GpuArchitecture {
 
     /// Check if this architecture supports Tensor Cores
     pub fn has_tensor_cores(&self) -> bool {
-        matches!(self, Self::Turing | Self::Ampere | Self::Ada | Self::Blackwell)
+        matches!(
+            self,
+            Self::Turing | Self::Ampere | Self::Ada | Self::Blackwell
+        )
     }
 
     /// Check if this architecture supports FP4 (Blackwell only)
@@ -307,18 +310,13 @@ impl GpuManager {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-                if parts.len() >= 5 {
-                    if let Ok(idx) = parts[0].parse::<usize>() {
-                        if let Some(gpu) = self.gpus.get_mut(idx) {
-                            gpu.free_memory = parts[1]
-                                .parse::<u64>()
-                                .unwrap_or(0)
-                                * 1024
-                                * 1024;
-                            gpu.utilization = parts[3].parse().unwrap_or(0);
-                            gpu.temperature = parts[4].parse().unwrap_or(0);
-                        }
-                    }
+                if parts.len() >= 5
+                    && let Ok(idx) = parts[0].parse::<usize>()
+                    && let Some(gpu) = self.gpus.get_mut(idx)
+                {
+                    gpu.free_memory = parts[1].parse::<u64>().unwrap_or(0) * 1024 * 1024;
+                    gpu.utilization = parts[3].parse().unwrap_or(0);
+                    gpu.temperature = parts[4].parse().unwrap_or(0);
                 }
             }
         }
@@ -348,11 +346,7 @@ impl GpuManager {
         }
 
         self.selected_gpu = index;
-        log::info!(
-            "Selected GPU {}: {}",
-            index,
-            self.gpus[index].name
-        );
+        log::info!("Selected GPU {}: {}", index, self.gpus[index].name);
         Ok(())
     }
 

@@ -3,9 +3,12 @@
 //! Provides low-latency audio I/O through JACK when available,
 //! with automatic fallback to ALSA/PipeWire when JACK is not running.
 
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use jack::{AudioIn, AudioOut, Client, ClientOptions, Control, Port, ProcessHandler, ProcessScope};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32, Ordering},
+};
 
 /// Audio data for inter-thread communication
 pub struct AudioData {
@@ -127,7 +130,7 @@ impl JackClient {
             Ok((client, status)) => {
                 log::info!("JACK client created: {:?}", status);
 
-                let sample_rate = client.sample_rate();
+                let sample_rate = client.sample_rate() as usize;
                 let buffer_size = client.buffer_size();
                 let client_name = client.name().to_string();
 
@@ -263,11 +266,8 @@ impl JackClient {
             let client_ref = client.as_client();
 
             // Find system capture ports
-            let capture_ports = client_ref.ports(
-                Some("system:capture.*"),
-                None,
-                jack::PortFlags::IS_OUTPUT,
-            );
+            let capture_ports =
+                client_ref.ports(Some("system:capture.*"), None, jack::PortFlags::IS_OUTPUT);
 
             // Connect first two capture ports to our inputs
             if capture_ports.len() >= 2 {
@@ -290,11 +290,8 @@ impl JackClient {
             let client_ref = client.as_client();
 
             // Find system playback ports
-            let playback_ports = client_ref.ports(
-                Some("system:playback.*"),
-                None,
-                jack::PortFlags::IS_INPUT,
-            );
+            let playback_ports =
+                client_ref.ports(Some("system:playback.*"), None, jack::PortFlags::IS_INPUT);
 
             // Connect our outputs to first two playback ports
             if playback_ports.len() >= 2 {
@@ -321,7 +318,9 @@ impl JackClient {
     /// List all available JACK ports
     pub fn list_ports(&self) -> Vec<String> {
         if let Some(ref client) = self.client {
-            client.as_client().ports(None, None, jack::PortFlags::empty())
+            client
+                .as_client()
+                .ports(None, None, jack::PortFlags::empty())
         } else {
             Vec::new()
         }
@@ -330,7 +329,9 @@ impl JackClient {
     /// List capture (input) ports
     pub fn list_capture_ports(&self) -> Vec<String> {
         if let Some(ref client) = self.client {
-            client.as_client().ports(None, None, jack::PortFlags::IS_OUTPUT)
+            client
+                .as_client()
+                .ports(None, None, jack::PortFlags::IS_OUTPUT)
         } else {
             Vec::new()
         }
@@ -339,14 +340,20 @@ impl JackClient {
     /// List playback (output) ports
     pub fn list_playback_ports(&self) -> Vec<String> {
         if let Some(ref client) = self.client {
-            client.as_client().ports(None, None, jack::PortFlags::IS_INPUT)
+            client
+                .as_client()
+                .ports(None, None, jack::PortFlags::IS_INPUT)
         } else {
             Vec::new()
         }
     }
 
     /// Connect a source port to a destination port by name
-    pub fn connect_ports(&self, source: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn connect_ports(
+        &self,
+        source: &str,
+        dest: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref client) = self.client {
             client.as_client().connect_ports_by_name(source, dest)?;
             log::info!("JACK: Connected {} -> {}", source, dest);
@@ -355,7 +362,11 @@ impl JackClient {
     }
 
     /// Disconnect ports by name
-    pub fn disconnect_ports(&self, source: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn disconnect_ports(
+        &self,
+        source: &str,
+        dest: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref client) = self.client {
             client.as_client().disconnect_ports_by_name(source, dest)?;
             log::info!("JACK: Disconnected {} from {}", source, dest);
@@ -430,8 +441,14 @@ mod tests {
     #[test]
     fn test_jack_router() {
         let mut router = JackRouter::new();
-        router.add_connection("system:capture_1".to_string(), "PhantomLink:input_L".to_string());
-        router.add_connection("system:capture_2".to_string(), "PhantomLink:input_R".to_string());
+        router.add_connection(
+            "system:capture_1".to_string(),
+            "PhantomLink:input_L".to_string(),
+        );
+        router.add_connection(
+            "system:capture_2".to_string(),
+            "PhantomLink:input_R".to_string(),
+        );
 
         assert_eq!(router.get_connections().len(), 2);
 

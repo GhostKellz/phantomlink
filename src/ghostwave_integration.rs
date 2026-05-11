@@ -16,14 +16,19 @@
 
 #![allow(dead_code)] // Complete GhostWave integration API
 
-use anyhow::{Context, Result};
+#[cfg(feature = "ghostwave")]
+use anyhow::Context;
+use anyhow::Result;
+#[cfg(feature = "ghostwave")]
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "ghostwave")]
 use ghostwave_core::{
-    processor::{AudioProcessor, ParamValue, ProcessingProfile},
-    telemetry::{TelemetryCollector, TelemetrySnapshot, PerformanceMetrics, GpuMetrics, AudioMetrics},
     Config, GhostWaveProcessor, ProcessingMode, StreamConfig,
+    processor::{AudioProcessor, ParamValue, ProcessingProfile},
+    telemetry::{
+        AudioMetrics, GpuMetrics, PerformanceMetrics, TelemetryCollector, TelemetrySnapshot,
+    },
 };
 
 /// Processing modes from GhostWave v0.2.0 (NVIDIA Maxine compatible)
@@ -68,7 +73,7 @@ impl LatencyMode {
     }
 
     #[cfg(feature = "ghostwave")]
-    fn to_ghostwave_mode(&self) -> ProcessingMode {
+    fn to_ghostwave_mode(self) -> ProcessingMode {
         match self {
             Self::LowLatency => ProcessingMode::LowLatency,
             Self::Balanced => ProcessingMode::Balanced,
@@ -112,6 +117,36 @@ impl DenoiseQuality {
 
     pub fn all() -> &'static [DenoiseQuality] {
         &[Self::Fast, Self::Balanced, Self::Quality, Self::Ultra]
+    }
+}
+
+/// Denoiser backend selection (mirrors ghostwave_core::dsp_pipeline::DenoiserBackend)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DenoiserBackend {
+    /// RNNoise-based neural denoising (10ms latency at 48kHz, best quality)
+    #[default]
+    Nnnoiseless,
+    /// Spectral Wiener filter (works at any sample rate, lower quality)
+    Spectral,
+}
+
+impl DenoiserBackend {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Nnnoiseless => "AI (RNNoise)",
+            Self::Spectral => "Spectral",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Nnnoiseless => "Neural network denoising, 10ms latency, best quality at 48kHz",
+            Self::Spectral => "Wiener spectral filter, works at any sample rate",
+        }
+    }
+
+    pub fn all() -> &'static [DenoiserBackend] {
+        &[Self::Nnnoiseless, Self::Spectral]
     }
 }
 
@@ -203,7 +238,7 @@ impl PhantomLinkProfile {
     }
 
     #[cfg(feature = "ghostwave")]
-    fn to_ghostwave_profile(&self) -> ProcessingProfile {
+    fn to_ghostwave_profile(self) -> ProcessingProfile {
         match self {
             Self::XlrStudio => ProcessingProfile::Studio,
             Self::Streaming => ProcessingProfile::Streaming,
@@ -321,6 +356,7 @@ pub struct GhostWaveIntegration {
     latency_mode: LatencyMode,
     noise_strength: f32,
     denoise_quality: DenoiseQuality,
+    denoiser_backend: DenoiserBackend,
 
     // Echo cancellation
     echo_cancellation: EchoCancellationState,
@@ -353,7 +389,8 @@ impl GhostWaveIntegration {
     pub fn with_config(sample_rate: u32, channels: u32, buffer_size: usize) -> Result<Self> {
         #[cfg(feature = "ghostwave")]
         let processor = {
-            let config = Config::default().with_overrides(Some(sample_rate), Some(buffer_size as u32));
+            let config =
+                Config::default().with_overrides(Some(sample_rate), Some(buffer_size as u32));
 
             let mut proc =
                 GhostWaveProcessor::new(config).context("Failed to create GhostWave processor")?;
@@ -381,6 +418,7 @@ impl GhostWaveIntegration {
             latency_mode: LatencyMode::default(),
             noise_strength: 0.65,
             denoise_quality: DenoiseQuality::Balanced,
+            denoiser_backend: DenoiserBackend::default(),
             echo_cancellation: EchoCancellationState {
                 enabled: false,
                 tail_length_ms: 200,
@@ -403,7 +441,7 @@ impl GhostWaveIntegration {
     #[cfg(feature = "ghostwave")]
     pub fn with_stream_config(stream_config: StreamConfig) -> Result<Self> {
         let sample_rate = stream_config.sample_rate;
-        let channels = stream_config.channels as u32;
+        let channels = stream_config.channels;
         let buffer_size = stream_config.buffer_frames as usize;
 
         Self::with_config(sample_rate, channels, buffer_size)
@@ -440,6 +478,7 @@ impl GhostWaveIntegration {
     }
 
     /// Process audio through GhostWave AI denoising pipeline
+    #[allow(unused_variables)]
     pub fn process(&mut self, buffer: &mut [f32]) -> Result<()> {
         if !self.enabled {
             return Ok(());
@@ -565,11 +604,11 @@ impl GhostWaveIntegration {
     /// Update GPU fallback status from processor
     pub fn refresh_gpu_status(&mut self) {
         #[cfg(feature = "ghostwave")]
-        if let Ok(proc) = self.processor.lock() {
-            if proc.get_rtx_capabilities().is_some() {
-                // Update from capabilities
-                self.gpu_fallback.gpu_active = proc.has_rtx_acceleration();
-            }
+        if let Ok(proc) = self.processor.lock()
+            && proc.get_rtx_capabilities().is_some()
+        {
+            // Update from capabilities
+            self.gpu_fallback.gpu_active = proc.has_rtx_acceleration();
         }
 
         // Also refresh RTX status
@@ -614,7 +653,8 @@ impl GhostWaveIntegration {
     /// Update noise reduction metrics for telemetry
     #[cfg(feature = "ghostwave")]
     pub fn update_noise_metrics(&self, noise_floor_db: f32, reduction_db: f32) {
-        self.telemetry.update_noise_reduction(noise_floor_db, reduction_db);
+        self.telemetry
+            .update_noise_reduction(noise_floor_db, reduction_db);
     }
 
     /// Get current profile
@@ -630,6 +670,16 @@ impl GhostWaveIntegration {
     /// Get denoise quality
     pub fn get_denoise_quality(&self) -> DenoiseQuality {
         self.denoise_quality
+    }
+
+    /// Get current denoiser backend
+    pub fn get_denoiser_backend(&self) -> DenoiserBackend {
+        self.denoiser_backend
+    }
+
+    /// Set denoiser backend (Nnnoiseless or Spectral)
+    pub fn set_denoiser_backend(&mut self, backend: DenoiserBackend) {
+        self.denoiser_backend = backend;
     }
 
     /// Check if processing is enabled
@@ -730,8 +780,13 @@ impl GhostWaveIntegration {
         }
 
         if self.gpu_fallback.fallback_active {
-            return format!("CPU Fallback: {}",
-                self.gpu_fallback.fallback_reason.as_deref().unwrap_or("GPU unavailable"));
+            return format!(
+                "CPU Fallback: {}",
+                self.gpu_fallback
+                    .fallback_reason
+                    .as_deref()
+                    .unwrap_or("GPU unavailable")
+            );
         }
 
         if self.rtx_status.available {
@@ -774,6 +829,7 @@ impl Default for GhostWaveIntegration {
                 latency_mode: LatencyMode::default(),
                 noise_strength: 0.65,
                 denoise_quality: DenoiseQuality::Balanced,
+                denoiser_backend: DenoiserBackend::default(),
                 echo_cancellation: EchoCancellationState::default(),
                 rtx_status: RtxStatus::default(),
                 gpu_fallback: GpuFallbackStatus {
@@ -949,7 +1005,10 @@ mod tests {
         // Verify it returns one of the expected states
         assert!(matches!(
             health,
-            StatusHealth::Healthy | StatusHealth::CpuOnly | StatusHealth::Warning | StatusHealth::Disabled
+            StatusHealth::Healthy
+                | StatusHealth::CpuOnly
+                | StatusHealth::Warning
+                | StatusHealth::Disabled
         ));
     }
 
@@ -1152,19 +1211,28 @@ mod tests {
 
             // Verify buffer was processed (not zero'd out completely)
             let energy: f32 = buffer.iter().map(|s| s * s).sum();
-            assert!(energy > 0.0 || frame == 0, "Audio should not be completely silent");
+            assert!(
+                energy > 0.0 || frame == 0,
+                "Audio should not be completely silent"
+            );
         }
 
         // Verify metrics are being tracked
         let metrics = integration.get_metrics();
         // Note: frames_processed only increments when ghostwave feature is enabled
         #[cfg(feature = "ghostwave")]
-        assert!(metrics.frames_processed >= 100, "Should have processed at least 100 frames");
+        assert!(
+            metrics.frames_processed >= 100,
+            "Should have processed at least 100 frames"
+        );
         assert!(metrics.latency_ms >= 0.0, "Latency should be non-negative");
 
         // Verify average latency is reasonable (< 100ms for real-time)
         let avg_latency = total_latency / 100.0;
-        assert!(avg_latency < 100.0, "Average latency should be under 100ms for real-time audio");
+        assert!(
+            avg_latency < 100.0,
+            "Average latency should be under 100ms for real-time audio"
+        );
     }
 
     #[test]

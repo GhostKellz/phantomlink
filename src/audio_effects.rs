@@ -77,7 +77,7 @@ impl NoiseGate {
                 self.hold_counter -= 1.0;
             } else {
                 // Release - close gate
-                self.envelope = self.envelope * release_coeff;
+                self.envelope *= release_coeff;
             }
 
             // Apply gate
@@ -342,7 +342,8 @@ impl ChannelEffects {
         self.gate.set_threshold(config.gate_threshold_db);
 
         self.compressor.set_enabled(config.compressor_enabled);
-        self.compressor.set_threshold(config.compressor_threshold_db);
+        self.compressor
+            .set_threshold(config.compressor_threshold_db);
         self.compressor.set_ratio(config.compressor_ratio);
 
         self.limiter.set_enabled(config.limiter_enabled);

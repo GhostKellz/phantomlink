@@ -4,8 +4,8 @@
 
 #![allow(dead_code)] // Widget library - components used as needed in various panels
 
-use eframe::egui;
 use crate::gui::theme::WavelinkTheme;
+use eframe::egui;
 
 /// Hardware-style rotary knob for gain/pan controls
 pub struct HardwareKnob {
@@ -43,7 +43,11 @@ impl HardwareKnob {
 
             // Outer ring (metallic look)
             painter.circle_filled(center, knob_radius + 3.0, egui::Color32::from_gray(60));
-            painter.circle_stroke(center, knob_radius + 3.0, egui::Stroke::new(1.0, egui::Color32::from_gray(80)));
+            painter.circle_stroke(
+                center,
+                knob_radius + 3.0,
+                egui::Stroke::new(1.0, egui::Color32::from_gray(80)),
+            );
 
             // Knob body with gradient effect
             let knob_color = if response.hovered() || response.dragged() {
@@ -54,13 +58,19 @@ impl HardwareKnob {
             painter.circle_filled(center, knob_radius, knob_color);
 
             // Inner shadow
-            painter.circle_stroke(center, knob_radius - 2.0, egui::Stroke::new(1.0, egui::Color32::from_gray(50)));
+            painter.circle_stroke(
+                center,
+                knob_radius - 2.0,
+                egui::Stroke::new(1.0, egui::Color32::from_gray(50)),
+            );
 
             // Position indicator line
             let normalized = (self.value - self.min) / (self.max - self.min);
             let angle = std::f32::consts::PI * 0.75 + normalized * std::f32::consts::PI * 1.5;
-            let indicator_start = center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.4);
-            let indicator_end = center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.85);
+            let indicator_start =
+                center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.4);
+            let indicator_end =
+                center + egui::vec2(angle.cos(), angle.sin()) * (knob_radius * 0.85);
 
             painter.line_segment(
                 [indicator_start, indicator_end],
@@ -168,7 +178,8 @@ impl ProfessionalMeter {
 
     pub fn draw(&self, ui: &mut egui::Ui, theme: &WavelinkTheme, height: f32) {
         let width = 24.0;
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
 
         // Click to reset clip indicator
         if response.clicked() {
@@ -186,9 +197,21 @@ impl ProfessionalMeter {
             let segment_gap = 1.0;
             let segments = ((height - 4.0) / (segment_height + segment_gap)) as i32;
 
-            let peak_db = if self.peak > 0.0001 { 20.0 * self.peak.log10() } else { -60.0 };
-            let rms_db = if self.rms > 0.0001 { 20.0 * self.rms.log10() } else { -60.0 };
-            let hold_db = if self.peak_hold > 0.0001 { 20.0 * self.peak_hold.log10() } else { -60.0 };
+            let peak_db = if self.peak > 0.0001 {
+                20.0 * self.peak.log10()
+            } else {
+                -60.0
+            };
+            let rms_db = if self.rms > 0.0001 {
+                20.0 * self.rms.log10()
+            } else {
+                -60.0
+            };
+            let hold_db = if self.peak_hold > 0.0001 {
+                20.0 * self.peak_hold.log10()
+            } else {
+                -60.0
+            };
 
             let meter_rect = rect.shrink(2.0);
 
@@ -305,7 +328,7 @@ impl ModernChannelStrip {
             show_telemetry: true, // Show by default
         }
     }
-    
+
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -322,13 +345,16 @@ impl ModernChannelStrip {
         // Channel strip container - Wavelink XLR style
         egui::Frame::none()
             .fill(theme.channel_strip_bg())
-            .stroke(egui::Stroke::new(1.5, if self.solo {
-                theme.accent_secondary
-            } else if self.muted {
-                theme.error.linear_multiply(0.5)
-            } else {
-                theme.channel_strip_border()
-            }))
+            .stroke(egui::Stroke::new(
+                1.5,
+                if self.solo {
+                    theme.accent_secondary
+                } else if self.muted {
+                    theme.error.linear_multiply(0.5)
+                } else {
+                    theme.channel_strip_border()
+                },
+            ))
             .rounding(egui::Rounding::same(12.0))
             .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
@@ -337,21 +363,19 @@ impl ModernChannelStrip {
 
                 // Channel header - XLR style with icon
                 ui.vertical_centered(|ui| {
-                    let icon = if channel_name.contains("MIC") { "🎤" } else { "🎸" };
-                    ui.label(
-                        egui::RichText::new(icon)
-                            .size(20.0)
-                    );
-                    ui.label(
-                        egui::RichText::new(channel_name)
-                            .size(14.0)
-                            .strong()
-                            .color(if self.muted {
-                                theme.text_muted
-                            } else {
-                                theme.accent_primary
-                            })
-                    );
+                    let icon = if channel_name.contains("MIC") {
+                        "🎤"
+                    } else {
+                        "🎸"
+                    };
+                    ui.label(egui::RichText::new(icon).size(20.0));
+                    ui.label(egui::RichText::new(channel_name).size(14.0).strong().color(
+                        if self.muted {
+                            theme.text_muted
+                        } else {
+                            theme.accent_primary
+                        },
+                    ));
                 });
 
                 ui.add_space(8.0);
@@ -378,8 +402,7 @@ impl ModernChannelStrip {
                         self.draw_pan_indicator(ui, theme);
                         let pan_response = ui.add_sized(
                             [60.0, 20.0],
-                            egui::Slider::new(&mut self.pan, -1.0..=1.0)
-                                .show_value(false)
+                            egui::Slider::new(&mut self.pan, -1.0..=1.0).show_value(false),
                         );
                         if pan_response.changed() {
                             response.pan_changed = true;
@@ -391,13 +414,13 @@ impl ModernChannelStrip {
                         ui.label(
                             egui::RichText::new("VOL")
                                 .size(9.0)
-                                .color(theme.text_secondary)
+                                .color(theme.text_secondary),
                         );
                         let volume_response = ui.add_sized(
                             [40.0, 60.0],
                             egui::Slider::new(&mut self.volume, 0.0..=1.0)
                                 .show_value(false)
-                                .vertical()
+                                .vertical(),
                         );
                         if volume_response.changed() {
                             response.volume_changed = true;
@@ -406,20 +429,22 @@ impl ModernChannelStrip {
                 });
 
                 ui.add_space(8.0);
-                
+
                 // VST Plugin selection with modern dropdown
                 ui.label(
                     egui::RichText::new("VST")
                         .size(11.0)
                         .strong()
-                        .color(theme.text_secondary)
+                        .color(theme.text_secondary),
                 );
-                
+
                 let selected_text = if let Some(plugin_idx) = self.selected_vst {
-                    vst_plugin_info.get(plugin_idx)
+                    vst_plugin_info
+                        .get(plugin_idx)
                         .map(|info| info.name.as_str())
                         .or_else(|| {
-                            vst_plugins.get(plugin_idx)
+                            vst_plugins
+                                .get(plugin_idx)
                                 .and_then(|p| p.file_name())
                                 .and_then(|n| n.to_str())
                         })
@@ -427,15 +452,18 @@ impl ModernChannelStrip {
                 } else {
                     "None"
                 };
-                
-                egui::ComboBox::from_id_source(format!("vst_{}", channel_name))
+
+                egui::ComboBox::from_id_salt(format!("vst_{}", channel_name))
                     .selected_text(selected_text)
                     .width(ui.available_width())
                     .show_ui(ui, |ui| {
-                        if ui.selectable_value(&mut self.selected_vst, None, "None").clicked() {
+                        if ui
+                            .selectable_value(&mut self.selected_vst, None, "None")
+                            .clicked()
+                        {
                             response.vst_changed = true;
                         }
-                        
+
                         if !vst_plugin_info.is_empty() {
                             for (idx, plugin_info) in vst_plugin_info.iter().enumerate() {
                                 let display_name = if plugin_info.vendor.is_empty() {
@@ -443,35 +471,62 @@ impl ModernChannelStrip {
                                 } else {
                                     format!("{}\n{}", plugin_info.name, plugin_info.vendor)
                                 };
-                                
-                                if ui.selectable_value(&mut self.selected_vst, Some(idx), display_name).clicked() {
+
+                                if ui
+                                    .selectable_value(
+                                        &mut self.selected_vst,
+                                        Some(idx),
+                                        display_name,
+                                    )
+                                    .clicked()
+                                {
                                     response.vst_changed = true;
                                 }
                             }
                         } else {
                             for (idx, plugin) in vst_plugins.iter().enumerate() {
-                                let name = plugin.file_name()
+                                let name = plugin
+                                    .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or("Unknown");
-                                if ui.selectable_value(&mut self.selected_vst, Some(idx), name).clicked() {
+                                if ui
+                                    .selectable_value(&mut self.selected_vst, Some(idx), name)
+                                    .clicked()
+                                {
                                     response.vst_changed = true;
                                 }
                             }
                         }
                     });
-                
+
                 ui.add_space(12.0);
-                
+
                 // Control buttons - Modern status toggles
                 ui.horizontal(|ui| {
-                    if ui.add(status_toggle_button("MUTE", self.muted, theme, StatusButtonType::Mute)).clicked() {
+                    if ui
+                        .add(status_toggle_button(
+                            "MUTE",
+                            self.muted,
+                            theme,
+                            StatusButtonType::Mute,
+                        ))
+                        .clicked()
+                    {
                         self.muted = !self.muted;
                         response.mute_changed = true;
                     }
 
                     ui.add_space(4.0);
 
-                    if ui.add(status_toggle_button("SOLO", self.solo, theme, StatusButtonType::Solo)).clicked() {
+                    if ui
+                        .add(status_toggle_button(
+                            "SOLO",
+                            self.solo,
+                            theme,
+                            StatusButtonType::Solo,
+                        ))
+                        .clicked()
+                    {
                         self.solo = !self.solo;
                         response.solo_changed = true;
                     }
@@ -507,15 +562,19 @@ impl ModernChannelStrip {
                     } else {
                         theme.error
                     };
-                    ui.label(egui::RichText::new(format!("{:.1}ms", tel.latency_ms))
-                        .size(9.0)
-                        .color(lat_color));
+                    ui.label(
+                        egui::RichText::new(format!("{:.1}ms", tel.latency_ms))
+                            .size(9.0)
+                            .color(lat_color),
+                    );
 
                     // XRun indicator
                     if tel.xruns > 0 {
-                        ui.label(egui::RichText::new(format!("x{}", tel.xruns))
-                            .size(8.0)
-                            .color(theme.error));
+                        ui.label(
+                            egui::RichText::new(format!("x{}", tel.xruns))
+                                .size(8.0)
+                                .color(theme.error),
+                        );
                     }
                 });
 
@@ -528,28 +587,26 @@ impl ModernChannelStrip {
                         } else {
                             theme.warning // CPU fallback = yellow
                         };
-                        ui.label(egui::RichText::new("GW")
-                            .size(8.0)
-                            .color(gw_color));
+                        ui.label(egui::RichText::new("GW").size(8.0).color(gw_color));
                     }
 
                     // RTX indicator
                     if tel.rtx_active {
-                        ui.label(egui::RichText::new("RTX")
-                            .size(8.0)
-                            .color(theme.accent_secondary));
+                        ui.label(
+                            egui::RichText::new("RTX")
+                                .size(8.0)
+                                .color(theme.accent_secondary),
+                        );
                     }
 
                     // VST indicator
                     if tel.vst_active {
-                        ui.label(egui::RichText::new("VST")
-                            .size(8.0)
-                            .color(theme.info));
+                        ui.label(egui::RichText::new("VST").size(8.0).color(theme.info));
                     }
                 });
             });
     }
-    
+
     fn draw_pan_indicator(&self, ui: &mut egui::Ui, theme: &WavelinkTheme) {
         let size = egui::vec2(60.0, 16.0);
         let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -563,7 +620,10 @@ impl ModernChannelStrip {
             // Center line
             let center_x = rect.center().x;
             painter.line_segment(
-                [egui::pos2(center_x, rect.top() + 2.0), egui::pos2(center_x, rect.bottom() - 2.0)],
+                [
+                    egui::pos2(center_x, rect.top() + 2.0),
+                    egui::pos2(center_x, rect.bottom() - 2.0),
+                ],
                 egui::Stroke::new(1.0, theme.text_muted),
             );
 
@@ -610,23 +670,24 @@ impl ModernButton {
     pub fn primary(text: &str) -> egui::Button<'_> {
         egui::Button::new(
             egui::RichText::new(text)
-                .size(16.0)  // Larger text
-                .strong()
-        ).min_size(egui::vec2(140.0, 44.0))  // Larger touch target
+                .size(16.0) // Larger text
+                .strong(),
+        )
+        .min_size(egui::vec2(140.0, 44.0)) // Larger touch target
     }
 
     pub fn secondary(text: &str) -> egui::Button<'_> {
         egui::Button::new(
-            egui::RichText::new(text)
-                .size(14.0)  // Larger text
-        ).min_size(egui::vec2(100.0, 38.0))  // Larger touch target
+            egui::RichText::new(text).size(14.0), // Larger text
+        )
+        .min_size(egui::vec2(100.0, 38.0)) // Larger touch target
     }
-    
+
     pub fn icon_button(icon: &str, text: &str) -> egui::Button<'static> {
         egui::Button::new(
-            egui::RichText::new(format!("{} {}", icon, text))
-                .size(15.0)  // Larger text
-        ).min_size(egui::vec2(120.0, 40.0))  // Larger touch target
+            egui::RichText::new(format!("{} {}", icon, text)).size(15.0), // Larger text
+        )
+        .min_size(egui::vec2(120.0, 40.0)) // Larger touch target
     }
 }
 
@@ -634,19 +695,27 @@ pub struct StatusIndicator;
 
 impl StatusIndicator {
     pub fn show(ui: &mut egui::Ui, theme: &WavelinkTheme, status: &str, is_active: bool) {
-        let color = if is_active { theme.green_primary } else { theme.error };  // Use green instead of success
-        let icon = if is_active { "●" } else { "●" };
-        
+        let color = if is_active {
+            theme.green_primary
+        } else {
+            theme.error
+        }; // Use green instead of success
+        let icon = "●";
+
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new(icon)
-                    .size(18.0)  // Larger for touch
-                    .color(color)
+                    .size(18.0) // Larger for touch
+                    .color(color),
             );
             ui.label(
                 egui::RichText::new(status)
-                    .size(14.0)  // Larger for touch
-                    .color(if is_active { theme.text_primary } else { theme.text_muted })
+                    .size(14.0) // Larger for touch
+                    .color(if is_active {
+                        theme.text_primary
+                    } else {
+                        theme.text_muted
+                    }),
             );
         });
     }
@@ -654,63 +723,74 @@ impl StatusIndicator {
 
 pub fn glow_button(text: &str, color: egui::Color32) -> impl egui::Widget + '_ {
     move |ui: &mut egui::Ui| {
-        let desired_size = egui::vec2(140.0, 44.0);  // Larger touch target
+        let desired_size = egui::vec2(140.0, 44.0); // Larger touch target
         let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
-        
+
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            
+
             // Glow effect
             for i in 0..5 {
-                let glow_radius = 4.0 + i as f32 * 2.5;  // Larger glow
+                let glow_radius = 4.0 + i as f32 * 2.5; // Larger glow
                 let glow_alpha = 35 - i * 7;
                 let glow_color = egui::Color32::from_rgba_premultiplied(
-                    color.r(), color.g(), color.b(), glow_alpha
+                    color.r(),
+                    color.g(),
+                    color.b(),
+                    glow_alpha,
                 );
                 painter.rect_filled(
                     rect.expand(glow_radius),
-                    egui::Rounding::same(10.0 + glow_radius),  // More rounded
+                    egui::Rounding::same(10.0 + glow_radius), // More rounded
                     glow_color,
                 );
             }
-            
+
             // Button background with translucency
             let bg_color = if response.hovered() {
                 egui::Color32::from_rgba_premultiplied(color.r(), color.g(), color.b(), 120)
             } else {
                 egui::Color32::from_rgba_premultiplied(color.r(), color.g(), color.b(), 80)
             };
-            
+
             painter.rect_filled(rect, egui::Rounding::same(10.0), bg_color);
-            painter.rect_stroke(rect, egui::Rounding::same(10.0), egui::Stroke::new(2.0, color));
-            
+            painter.rect_stroke(
+                rect,
+                egui::Rounding::same(10.0),
+                egui::Stroke::new(2.0, color),
+            );
+
             // Text
             let text_color = if response.hovered() {
                 egui::Color32::WHITE
             } else {
                 color
             };
-            
+
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 text,
-                egui::FontId::proportional(16.0),  // Larger text
+                egui::FontId::proportional(16.0), // Larger text
                 text_color,
             );
         }
-        
+
         response
     }
 }
 
 // Enhanced modern button with glass effect and consistent theming
-pub fn modern_glass_button<'a>(text: &'a str, theme: &'a WavelinkTheme, enabled: bool) -> impl egui::Widget + 'a {
+pub fn modern_glass_button<'a>(
+    text: &'a str,
+    theme: &'a WavelinkTheme,
+    enabled: bool,
+) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| {
         let desired_size = egui::vec2(ui.available_width().min(200.0), 36.0);
         let response = ui.allocate_response(desired_size, egui::Sense::click());
         let rect = response.rect;
-        
+
         if ui.is_rect_visible(rect) {
             let bg_color = if !enabled {
                 theme.status_inactive()
@@ -721,21 +801,28 @@ pub fn modern_glass_button<'a>(text: &'a str, theme: &'a WavelinkTheme, enabled:
             } else {
                 theme.glass_button_bg()
             };
-            
+
             let text_color = if enabled {
                 theme.text_primary
             } else {
                 theme.text_muted
             };
-            
+
             // Draw glass effect background
             ui.painter().rect(
                 rect,
                 egui::Rounding::same(12.0),
                 bg_color,
-                egui::Stroke::new(1.5, if enabled { theme.green_primary } else { theme.medium_blue }),
+                egui::Stroke::new(
+                    1.5,
+                    if enabled {
+                        theme.green_primary
+                    } else {
+                        theme.medium_blue
+                    },
+                ),
             );
-            
+
             // Add subtle inner glow for glass effect
             if enabled && response.hovered() {
                 let inner_rect = rect.shrink(2.0);
@@ -746,7 +833,7 @@ pub fn modern_glass_button<'a>(text: &'a str, theme: &'a WavelinkTheme, enabled:
                     egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(34, 197, 94, 60)),
                 );
             }
-            
+
             // Draw text with proper alignment
             let text_rect = rect.shrink(8.0);
             ui.painter().text(
@@ -757,56 +844,90 @@ pub fn modern_glass_button<'a>(text: &'a str, theme: &'a WavelinkTheme, enabled:
                 text_color,
             );
         }
-        
+
         response
     }
 }
 
 // Status indicator button (for MUTE, SOLO, etc.)
-pub fn status_toggle_button<'a>(text: &'a str, active: bool, theme: &'a WavelinkTheme, button_type: StatusButtonType) -> impl egui::Widget + 'a {
+pub fn status_toggle_button<'a>(
+    text: &'a str,
+    active: bool,
+    theme: &'a WavelinkTheme,
+    button_type: StatusButtonType,
+) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| {
         let desired_size = egui::vec2(60.0, 28.0);
         let response = ui.allocate_response(desired_size, egui::Sense::click());
         let rect = response.rect;
-        
+
         if ui.is_rect_visible(rect) {
             let (bg_color, text_color, border_color) = match button_type {
-                StatusButtonType::Mute => if active {
-                    (theme.error, theme.deep_blue, theme.error)
-                } else {
-                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
-                },
-                StatusButtonType::Solo => if active {
-                    (theme.warning, theme.deep_blue, theme.warning)
-                } else {
-                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
-                },
-                StatusButtonType::Record => if active {
-                    (theme.error, theme.text_primary, theme.error)
-                } else {
-                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
-                },
-                StatusButtonType::Active => if active {
-                    (theme.green_primary, theme.deep_blue, theme.green_primary)
-                } else {
-                    (theme.translucent_input_bg(), theme.text_secondary, theme.medium_blue)
-                },
+                StatusButtonType::Mute => {
+                    if active {
+                        (theme.error, theme.deep_blue, theme.error)
+                    } else {
+                        (
+                            theme.translucent_input_bg(),
+                            theme.text_secondary,
+                            theme.medium_blue,
+                        )
+                    }
+                }
+                StatusButtonType::Solo => {
+                    if active {
+                        (theme.warning, theme.deep_blue, theme.warning)
+                    } else {
+                        (
+                            theme.translucent_input_bg(),
+                            theme.text_secondary,
+                            theme.medium_blue,
+                        )
+                    }
+                }
+                StatusButtonType::Record => {
+                    if active {
+                        (theme.error, theme.text_primary, theme.error)
+                    } else {
+                        (
+                            theme.translucent_input_bg(),
+                            theme.text_secondary,
+                            theme.medium_blue,
+                        )
+                    }
+                }
+                StatusButtonType::Active => {
+                    if active {
+                        (theme.green_primary, theme.deep_blue, theme.green_primary)
+                    } else {
+                        (
+                            theme.translucent_input_bg(),
+                            theme.text_secondary,
+                            theme.medium_blue,
+                        )
+                    }
+                }
             };
-            
+
             // Enhance colors on hover
             let final_bg = if response.hovered() && !active {
-                egui::Color32::from_rgba_premultiplied(bg_color.r(), bg_color.g(), bg_color.b(), 150)
+                egui::Color32::from_rgba_premultiplied(
+                    bg_color.r(),
+                    bg_color.g(),
+                    bg_color.b(),
+                    150,
+                )
             } else {
                 bg_color
             };
-            
+
             ui.painter().rect(
                 rect,
                 egui::Rounding::same(8.0),
                 final_bg,
                 egui::Stroke::new(1.5, border_color),
             );
-            
+
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -815,7 +936,7 @@ pub fn status_toggle_button<'a>(text: &'a str, active: bool, theme: &'a Wavelink
                 text_color,
             );
         }
-        
+
         response
     }
 }
@@ -829,12 +950,16 @@ pub enum StatusButtonType {
 }
 
 // Enhanced glow button with consistent theming
-pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: GlowButtonStyle) -> impl egui::Widget + 'a {
+pub fn enhanced_glow_button<'a>(
+    text: &'a str,
+    theme: &'a WavelinkTheme,
+    style: GlowButtonStyle,
+) -> impl egui::Widget + 'a {
     move |ui: &mut egui::Ui| {
         let desired_size = egui::vec2(ui.available_width().min(140.0), 32.0);
         let response = ui.allocate_response(desired_size, egui::Sense::click());
         let rect = response.rect;
-        
+
         if ui.is_rect_visible(rect) {
             let (base_color, glow_color) = match style {
                 GlowButtonStyle::Primary => (theme.green_primary, theme.green_glow),
@@ -843,9 +968,9 @@ pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: 
                 GlowButtonStyle::Warning => (theme.warning, egui::Color32::from_rgb(251, 146, 60)),
                 GlowButtonStyle::Danger => (theme.error, egui::Color32::from_rgb(220, 38, 38)),
             };
-            
+
             let animation_progress = if response.hovered() { 1.0 } else { 0.6 };
-            
+
             // Outer glow effect
             if response.hovered() {
                 for i in 0..3 {
@@ -854,12 +979,17 @@ pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: 
                     ui.painter().rect(
                         rect.expand(glow_expand),
                         egui::Rounding::same(14.0 + glow_expand),
-                        egui::Color32::from_rgba_premultiplied(glow_color.r(), glow_color.g(), glow_color.b(), alpha),
+                        egui::Color32::from_rgba_premultiplied(
+                            glow_color.r(),
+                            glow_color.g(),
+                            glow_color.b(),
+                            alpha,
+                        ),
                         egui::Stroke::NONE,
                     );
                 }
             }
-            
+
             // Main button
             let button_color = if response.is_pointer_button_down_on() {
                 egui::Color32::from_rgba_premultiplied(
@@ -876,14 +1006,14 @@ pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: 
                     (255.0 * animation_progress) as u8,
                 )
             };
-            
+
             ui.painter().rect(
                 rect,
                 egui::Rounding::same(10.0),
                 button_color,
                 egui::Stroke::new(1.5, glow_color),
             );
-            
+
             // Text with proper contrast
             ui.painter().text(
                 rect.center(),
@@ -893,7 +1023,7 @@ pub fn enhanced_glow_button<'a>(text: &'a str, theme: &'a WavelinkTheme, style: 
                 theme.deep_blue,
             );
         }
-        
+
         response
     }
 }

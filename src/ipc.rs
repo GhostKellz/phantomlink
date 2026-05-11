@@ -21,9 +21,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::audio::AudioEngine;
-use crate::ghostwave_integration::{
-    GhostWaveIntegration, LatencyMode, PhantomLinkProfile,
-};
+use crate::ghostwave_integration::{GhostWaveIntegration, LatencyMode, PhantomLinkProfile};
 
 /// JSON-RPC request structure
 #[derive(Debug, Deserialize)]
@@ -214,9 +212,7 @@ impl IpcServer {
 
                         // Handle each client in a separate thread
                         thread::spawn(move || {
-                            if let Err(e) =
-                                Self::handle_client(stream, audio_engine, ghostwave)
-                            {
+                            if let Err(e) = Self::handle_client(stream, audio_engine, ghostwave) {
                                 log::error!("IPC client error: {}", e);
                             }
                         });
@@ -312,16 +308,16 @@ impl IpcServer {
 
             // Mixer methods
             "mixer.get_channels" => Self::handle_get_channels(request.id, audio_engine),
-            "mixer.set_volume" => {
-                Self::handle_set_volume(request.id, request.params, audio_engine)
-            }
+            "mixer.set_volume" => Self::handle_set_volume(request.id, request.params, audio_engine),
             "mixer.set_mute" => Self::handle_set_mute(request.id, request.params, audio_engine),
             "mixer.set_gain" => Self::handle_set_gain(request.id, request.params, audio_engine),
             "mixer.set_pan" => Self::handle_set_pan(request.id, request.params, audio_engine),
 
             // GhostWave methods
             "ghostwave.status" => Self::handle_ghostwave_status(request.id, ghostwave),
-            "ghostwave.enable" => Self::handle_ghostwave_enable(request.id, request.params, ghostwave),
+            "ghostwave.enable" => {
+                Self::handle_ghostwave_enable(request.id, request.params, ghostwave)
+            }
             "ghostwave.set_profile" => {
                 Self::handle_ghostwave_set_profile(request.id, request.params, ghostwave)
             }
@@ -349,10 +345,7 @@ impl IpcServer {
         audio_engine: &Arc<Mutex<AudioEngine>>,
         ghostwave: &Option<Arc<Mutex<GhostWaveIntegration>>>,
     ) -> JsonRpcResponse {
-        let audio_running = audio_engine
-            .lock()
-            .map(|e| e.is_running())
-            .unwrap_or(false);
+        let audio_running = audio_engine.lock().map(|e| e.is_running()).unwrap_or(false);
 
         let gw_state = ghostwave.as_ref().and_then(|gw| {
             gw.lock().ok().map(|g| GhostWaveState {
@@ -400,10 +393,11 @@ impl IpcServer {
         // Get channel states
         let channels: Vec<ChannelState> = (0..4)
             .filter_map(|i| {
-                audio_engine.lock().ok().and_then(|e| {
+                audio_engine.lock().ok().map(|e| {
                     let levels = e.get_channel_levels(i).unwrap_or([0.0, 0.0]);
-                    let (volume, muted, gain, pan) = e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
-                    Some(ChannelState {
+                    let (volume, muted, gain, pan) =
+                        e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
+                    ChannelState {
                         index: i,
                         volume,
                         muted,
@@ -411,7 +405,7 @@ impl IpcServer {
                         pan,
                         peak_level: levels[0],
                         rms_level: levels[1],
-                    })
+                    }
                 })
             })
             .collect();
@@ -445,10 +439,11 @@ impl IpcServer {
     ) -> JsonRpcResponse {
         let channels: Vec<ChannelState> = (0..4)
             .filter_map(|i| {
-                audio_engine.lock().ok().and_then(|e| {
+                audio_engine.lock().ok().map(|e| {
                     let levels = e.get_channel_levels(i).unwrap_or([0.0, 0.0]);
-                    let (volume, muted, gain, pan) = e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
-                    Some(ChannelState {
+                    let (volume, muted, gain, pan) =
+                        e.get_channel_state(i).unwrap_or((0.8, false, 0.0, 0.0));
+                    ChannelState {
                         index: i,
                         volume,
                         muted,
@@ -456,7 +451,7 @@ impl IpcServer {
                         pan,
                         peak_level: levels[0],
                         rms_level: levels[1],
-                    })
+                    }
                 })
             })
             .collect();
@@ -472,7 +467,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -483,7 +478,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing channel parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -494,7 +489,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing volume parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -502,7 +497,11 @@ impl IpcServer {
             engine.update_channel(channel, volume, false);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
-            JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
+            JsonRpcResponse::error(
+                id,
+                INTERNAL_ERROR,
+                "Failed to lock audio engine".to_string(),
+            )
         }
     }
 
@@ -514,7 +513,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -525,7 +524,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing channel parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -536,17 +535,23 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing muted parameter".to_string(),
-                )
+                );
             }
         };
 
         if let Ok(engine) = audio_engine.lock() {
             // Get current channel state to preserve other values
-            let (volume, _, gain, pan) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            let (volume, _, gain, pan) = engine
+                .get_channel_state(channel)
+                .unwrap_or((0.8, false, 0.0, 0.0));
             engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
-            JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
+            JsonRpcResponse::error(
+                id,
+                INTERNAL_ERROR,
+                "Failed to lock audio engine".to_string(),
+            )
         }
     }
 
@@ -558,7 +563,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -569,7 +574,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing channel parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -580,17 +585,23 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing gain parameter".to_string(),
-                )
+                );
             }
         };
 
         if let Ok(engine) = audio_engine.lock() {
             // Get current channel state to preserve other values
-            let (volume, muted, _, pan) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            let (volume, muted, _, pan) = engine
+                .get_channel_state(channel)
+                .unwrap_or((0.8, false, 0.0, 0.0));
             engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
-            JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
+            JsonRpcResponse::error(
+                id,
+                INTERNAL_ERROR,
+                "Failed to lock audio engine".to_string(),
+            )
         }
     }
 
@@ -602,7 +613,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -613,7 +624,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing channel parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -624,17 +635,23 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing pan parameter".to_string(),
-                )
+                );
             }
         };
 
         if let Ok(engine) = audio_engine.lock() {
             // Get current channel state to preserve other values
-            let (volume, muted, gain, _) = engine.get_channel_state(channel).unwrap_or((0.8, false, 0.0, 0.0));
+            let (volume, muted, gain, _) = engine
+                .get_channel_state(channel)
+                .unwrap_or((0.8, false, 0.0, 0.0));
             engine.update_channel_advanced(channel, volume, muted, gain, pan);
             JsonRpcResponse::success(id, serde_json::json!({"success": true}))
         } else {
-            JsonRpcResponse::error(id, INTERNAL_ERROR, "Failed to lock audio engine".to_string())
+            JsonRpcResponse::error(
+                id,
+                INTERNAL_ERROR,
+                "Failed to lock audio engine".to_string(),
+            )
         }
     }
 
@@ -685,11 +702,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 
@@ -701,7 +716,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -712,7 +727,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing enabled parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -728,11 +743,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 
@@ -744,7 +757,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -755,7 +768,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing profile parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -769,7 +782,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     format!("Unknown profile: {}", profile_str),
-                )
+                );
             }
         };
 
@@ -789,11 +802,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 
@@ -805,7 +816,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -816,7 +827,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing strength parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -836,11 +847,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 
@@ -852,7 +861,7 @@ impl IpcServer {
         let params = match params {
             Some(p) => p,
             None => {
-                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string())
+                return JsonRpcResponse::error(id, INVALID_PARAMS, "Missing params".to_string());
             }
         };
 
@@ -863,7 +872,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     "Missing mode parameter".to_string(),
-                )
+                );
             }
         };
 
@@ -876,7 +885,7 @@ impl IpcServer {
                     id,
                     INVALID_PARAMS,
                     format!("Unknown latency mode: {}", mode_str),
-                )
+                );
             }
         };
 
@@ -892,11 +901,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 
@@ -920,11 +927,9 @@ impl IpcServer {
                     "Failed to lock GhostWave".to_string(),
                 ),
             },
-            None => JsonRpcResponse::error(
-                id,
-                INTERNAL_ERROR,
-                "GhostWave not available".to_string(),
-            ),
+            None => {
+                JsonRpcResponse::error(id, INTERNAL_ERROR, "GhostWave not available".to_string())
+            }
         }
     }
 }
@@ -947,11 +952,15 @@ mod tests {
 
     #[test]
     fn test_json_rpc_response() {
-        let response = JsonRpcResponse::success(Some(serde_json::json!(1)), serde_json::json!({"test": true}));
+        let response = JsonRpcResponse::success(
+            Some(serde_json::json!(1)),
+            serde_json::json!({"test": true}),
+        );
         assert!(response.result.is_some());
         assert!(response.error.is_none());
 
-        let error = JsonRpcResponse::error(Some(serde_json::json!(2)), -32600, "Test error".to_string());
+        let error =
+            JsonRpcResponse::error(Some(serde_json::json!(2)), -32600, "Test error".to_string());
         assert!(error.result.is_none());
         assert!(error.error.is_some());
     }

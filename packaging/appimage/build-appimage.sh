@@ -4,7 +4,8 @@
 
 set -e
 
-VERSION="0.2.0"
+# Read version from Cargo.toml (single source of truth)
+VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 APPDIR="AppDir"
 
 echo "Building PhantomLink $VERSION AppImage..."

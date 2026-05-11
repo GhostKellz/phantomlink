@@ -26,7 +26,7 @@ PhantomLink will automatically pull these dependencies:
 ### Required
 - `alsa-lib` - ALSA audio library
 - `pipewire` - Audio server (recommended over PulseAudio)
-- `gtk3` - GUI toolkit
+- `libxkbcommon` - Keyboard handling library
 
 ### Optional (for RTX acceleration)
 - `nvidia-open` - NVIDIA open kernel driver (545+)
@@ -138,7 +138,7 @@ nvcc --version
 
 ```bash
 # Install build dependencies
-sudo pacman -S rust cargo alsa-lib pipewire gtk3
+sudo pacman -S rust cargo alsa-lib pipewire libxkbcommon libxcb jack2
 
 # Clone repository
 git clone https://github.com/ghostkellz/phantomlink.git

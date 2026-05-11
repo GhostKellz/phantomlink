@@ -14,7 +14,7 @@ sudo dnf install phantomlink
 
 Download the RPM from the releases page and install:
 ```bash
-sudo dnf install ./phantomlink-0.2.0-1.fc*.x86_64.rpm
+sudo dnf install ./phantomlink-0.4.0-1.fc*.x86_64.rpm
 ```
 
 ## Dependencies
@@ -22,7 +22,7 @@ sudo dnf install ./phantomlink-0.2.0-1.fc*.x86_64.rpm
 ### Required (installed automatically)
 - `alsa-lib` - ALSA audio library
 - `pipewire` - Audio server
-- `gtk3` - GUI toolkit
+- `libxkbcommon` - Keyboard handling library
 
 ### Optional (for RTX acceleration)
 ```bash
@@ -95,7 +95,7 @@ rm -rf ~/.local/share/phantomlink
 
 ```bash
 # Install build dependencies
-sudo dnf install rust cargo alsa-lib-devel pipewire-devel gtk3-devel
+sudo dnf install rust cargo alsa-lib-devel pipewire-devel libxkbcommon-devel libxcb-devel jack-audio-connection-kit-devel
 
 # Clone and build
 git clone https://github.com/ghostkellz/phantomlink.git

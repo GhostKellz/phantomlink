@@ -49,7 +49,7 @@ nvidia-smi
 ### XLR Studio
 - **Use case:** Recording, podcasting with XLR mics
 - **Suppression:** Low-medium (preserves voice character)
-- **Latency:** Ultra-low (~3ms)
+- **Latency:** Low (~10ms)
 - **Echo cancellation:** Off
 - **Best for:** Rode PodMic, SM7B, condenser mics
 

@@ -1,6 +1,6 @@
 # Maintainer: Christopher Kelley <ckelley@ghostkellz.sh>
 pkgname=phantomlink
-pkgver=0.2.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="Professional audio mixer and interface control for Linux with RTX AI noise suppression"
 arch=('x86_64')
@@ -9,14 +9,14 @@ license=('MIT')
 depends=(
     'alsa-lib'
     'pipewire'
-    'gtk3'
     'libxkbcommon'
     'libxcb'
 )
 makedepends=(
-    'rust'
+    'rust>=1.90'
     'cargo'
     'pkg-config'
+    'jack2'
 )
 optdepends=(
     'nvidia-open: RTX acceleration support (545+)'
@@ -34,7 +34,6 @@ build() {
 
     # Build with release optimizations
     export CARGO_HOME="$srcdir/cargo-home"
-    export RUSTUP_TOOLCHAIN=stable
 
     cargo build --release --locked
 }

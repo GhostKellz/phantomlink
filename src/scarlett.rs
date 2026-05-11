@@ -17,8 +17,8 @@
 
 use alsa::ctl::Ctl;
 use alsa::mixer::{Mixer, SelemId};
+use anyhow::{Context, Result, anyhow};
 use std::process::Command;
-use anyhow::{Result, Context, anyhow};
 
 /// Focusrite USB Vendor ID
 pub const FOCUSRITE_VID: u16 = 0x1235;
@@ -76,7 +76,7 @@ impl AirMode {
         }
     }
 
-    fn to_alsa_index(&self) -> u32 {
+    fn alsa_index(self) -> u32 {
         match self {
             Self::Off => 0,
             Self::Presence => 1,
@@ -122,7 +122,7 @@ impl InputLevel {
         }
     }
 
-    fn to_alsa_index(&self) -> u32 {
+    fn alsa_index(self) -> u32 {
         match self {
             Self::Line => 0,
             Self::Instrument => 1,
@@ -157,7 +157,7 @@ pub enum CaptureSource {
 }
 
 impl CaptureSource {
-    fn to_alsa_index(&self) -> u32 {
+    fn alsa_index(self) -> u32 {
         match self {
             Self::Off => 0,
             Self::Analogue1 => 1,
@@ -293,12 +293,11 @@ impl ScarlettSolo {
         for line in output_str.lines() {
             if line.contains("Scarlett Solo 4th Gen") {
                 // Parse "card N:" from the line
-                if let Some(card_part) = line.split(':').next() {
-                    if let Some(num_str) = card_part.split_whitespace().last() {
-                        if let Ok(num) = num_str.parse::<i32>() {
-                            return Ok((num, "Scarlett Solo 4th Gen".to_string()));
-                        }
-                    }
+                if let Some(card_part) = line.split(':').next()
+                    && let Some(num_str) = card_part.split_whitespace().last()
+                    && let Ok(num) = num_str.parse::<i32>()
+                {
+                    return Ok((num, "Scarlett Solo 4th Gen".to_string()));
                 }
             }
         }
@@ -308,12 +307,11 @@ impl ScarlettSolo {
             .context("Failed to read /proc/asound/cards")?;
 
         for line in cards.lines() {
-            if line.contains("Scarlett Solo 4th Gen") || line.contains("Focusrite Scarlett Solo") {
-                if let Some(num_str) = line.split_whitespace().next() {
-                    if let Ok(num) = num_str.trim().parse::<i32>() {
-                        return Ok((num, "Scarlett Solo 4th Gen".to_string()));
-                    }
-                }
+            if (line.contains("Scarlett Solo 4th Gen") || line.contains("Focusrite Scarlett Solo"))
+                && let Some(num_str) = line.split_whitespace().next()
+                && let Ok(num) = num_str.trim().parse::<i32>()
+            {
+                return Ok((num, "Scarlett Solo 4th Gen".to_string()));
             }
         }
 
@@ -350,7 +348,8 @@ impl ScarlettSolo {
     pub fn set_phantom_power(&mut self, enabled: bool) -> Result<()> {
         let selem_id = SelemId::new("Line In 2 Phantom Power", 0);
         if let Some(selem) = self.mixer.find_selem(&selem_id) {
-            selem.set_capture_switch_all(if enabled { 1 } else { 0 })
+            selem
+                .set_capture_switch_all(if enabled { 1 } else { 0 })
                 .context("Failed to set phantom power")?;
             self.phantom_power = enabled;
             Ok(())
@@ -362,7 +361,8 @@ impl ScarlettSolo {
     fn read_phantom_power(&self) -> Result<bool> {
         let selem_id = SelemId::new("Line In 2 Phantom Power", 0);
         if let Some(selem) = self.mixer.find_selem(&selem_id) {
-            let val = selem.get_capture_switch(alsa::mixer::SelemChannelId::mono())
+            let val = selem
+                .get_capture_switch(alsa::mixer::SelemChannelId::mono())
                 .unwrap_or(0);
             Ok(val != 0)
         } else {
@@ -383,7 +383,13 @@ impl ScarlettSolo {
     pub fn set_air_mode(&mut self, mode: AirMode) -> Result<()> {
         // Air mode is controlled via amixer enum
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", "Line In 2 Air", mode.name()])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                "Line In 2 Air",
+                mode.name(),
+            ])
             .output()
             .context("Failed to set Air mode")?;
 
@@ -391,8 +397,10 @@ impl ScarlettSolo {
             self.air_mode = mode;
             Ok(())
         } else {
-            Err(anyhow!("Failed to set Air mode: {}",
-                String::from_utf8_lossy(&output.stderr)))
+            Err(anyhow!(
+                "Failed to set Air mode: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
         }
     }
 
@@ -424,7 +432,13 @@ impl ScarlettSolo {
     /// Set input level mode for Input 1 (1/4" jack)
     pub fn set_input_level(&mut self, level: InputLevel) -> Result<()> {
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", "Line In 1 Level", level.name()])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                "Line In 1 Level",
+                level.name(),
+            ])
             .output()
             .context("Failed to set input level")?;
 
@@ -463,7 +477,8 @@ impl ScarlettSolo {
     pub fn set_direct_monitor(&mut self, enabled: bool) -> Result<()> {
         let selem_id = SelemId::new("Direct Monitor", 0);
         if let Some(selem) = self.mixer.find_selem(&selem_id) {
-            selem.set_playback_switch_all(if enabled { 1 } else { 0 })
+            selem
+                .set_playback_switch_all(if enabled { 1 } else { 0 })
                 .context("Failed to set direct monitor")?;
             self.direct_monitor = enabled;
             Ok(())
@@ -475,7 +490,8 @@ impl ScarlettSolo {
     fn read_direct_monitor(&self) -> Result<bool> {
         let selem_id = SelemId::new("Direct Monitor", 0);
         if let Some(selem) = self.mixer.find_selem(&selem_id) {
-            let val = selem.get_playback_switch(alsa::mixer::SelemChannelId::mono())
+            let val = selem
+                .get_playback_switch(alsa::mixer::SelemChannelId::mono())
                 .unwrap_or(0);
             Ok(val != 0)
         } else {
@@ -493,7 +509,13 @@ impl ScarlettSolo {
         let value = Self::db_to_alsa_volume(volume_db);
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, &format!("{}", value)])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                &format!("{}", value),
+            ])
             .output()
             .context("Failed to set mix volume")?;
 
@@ -534,14 +556,14 @@ impl ScarlettSolo {
         let mut meters = LevelMeters::default();
 
         // Parse "values=X,Y,Z,..."
-        if let Some(values_line) = stdout.lines().find(|l| l.contains("values=")) {
-            if let Some(values_str) = values_line.split("values=").nth(1) {
-                for (i, val_str) in values_str.split(',').enumerate() {
-                    if i < 12 {
-                        if let Ok(val) = val_str.trim().parse::<u16>() {
-                            meters.channels[i] = val;
-                        }
-                    }
+        if let Some(values_line) = stdout.lines().find(|l| l.contains("values="))
+            && let Some(values_str) = values_line.split("values=").nth(1)
+        {
+            for (i, val_str) in values_str.split(',').enumerate() {
+                if i < 12
+                    && let Ok(val) = val_str.trim().parse::<u16>()
+                {
+                    meters.channels[i] = val;
                 }
             }
         }
@@ -575,7 +597,13 @@ impl ScarlettSolo {
     /// Set PCM input mode to Direct (raw analog inputs)
     pub fn set_pcm_input_direct(&self) -> Result<()> {
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", "PCM Input", "Direct"])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                "PCM Input",
+                "Direct",
+            ])
             .output()
             .context("Failed to set PCM input mode")?;
 
@@ -589,7 +617,13 @@ impl ScarlettSolo {
     /// Set PCM input mode to Mixer (internal mixer output)
     pub fn set_pcm_input_mixer(&self) -> Result<()> {
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", "PCM Input", "Mixer"])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                "PCM Input",
+                "Mixer",
+            ])
             .output()
             .context("Failed to set PCM input mode")?;
 
@@ -647,14 +681,24 @@ impl ScarlettSolo {
         let source_name = source.name();
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, source_name])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                source_name,
+            ])
             .output()
             .context("Failed to set DSP input")?;
 
         if output.status.success() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to set DSP input {} to {}", dsp_channel, source_name))
+            Err(anyhow!(
+                "Failed to set DSP input {} to {}",
+                dsp_channel,
+                source_name
+            ))
         }
     }
 
@@ -664,14 +708,24 @@ impl ScarlettSolo {
         let source_name = source.name();
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, source_name])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                source_name,
+            ])
             .output()
             .context("Failed to set output source")?;
 
         if output.status.success() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to set output {} to {}", output_num, source_name))
+            Err(anyhow!(
+                "Failed to set output {} to {}",
+                output_num,
+                source_name
+            ))
         }
     }
 
@@ -681,14 +735,24 @@ impl ScarlettSolo {
         let source_name = source.name();
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, source_name])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                source_name,
+            ])
             .output()
             .context("Failed to set mixer input")?;
 
         if output.status.success() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to set mixer input {} to {}", input_num, source_name))
+            Err(anyhow!(
+                "Failed to set mixer input {} to {}",
+                input_num,
+                source_name
+            ))
         }
     }
 
@@ -698,32 +762,55 @@ impl ScarlettSolo {
         let source_name = source.name();
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, source_name])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                source_name,
+            ])
             .output()
             .context("Failed to set PCM capture source")?;
 
         if output.status.success() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to set PCM {} capture to {}", pcm_channel, source_name))
+            Err(anyhow!(
+                "Failed to set PCM {} capture to {}",
+                pcm_channel,
+                source_name
+            ))
         }
     }
 
     /// Set monitor mix volume for a specific input
     pub fn set_monitor_mix_volume(&self, mix: char, input: u8, volume_db: f32) -> Result<()> {
-        let control_name = format!("Monitor Mix {} Input {:02} Playback Volume",
-                                   mix.to_ascii_uppercase(), input);
+        let control_name = format!(
+            "Monitor Mix {} Input {:02} Playback Volume",
+            mix.to_ascii_uppercase(),
+            input
+        );
         let value = Self::db_to_alsa_volume(volume_db);
 
         let output = Command::new("amixer")
-            .args(["-c", &self.card_num.to_string(), "set", &control_name, &format!("{}", value)])
+            .args([
+                "-c",
+                &self.card_num.to_string(),
+                "set",
+                &control_name,
+                &format!("{}", value),
+            ])
             .output()
             .context("Failed to set monitor mix volume")?;
 
         if output.status.success() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to set monitor mix {} input {} volume", mix, input))
+            Err(anyhow!(
+                "Failed to set monitor mix {} input {} volume",
+                mix,
+                input
+            ))
         }
     }
 
@@ -740,12 +827,11 @@ impl ScarlettSolo {
 
             let stdout = String::from_utf8_lossy(&output.stdout);
             // Parse the value from output like ": values=150"
-            if let Some(line) = stdout.lines().find(|l| l.contains("values=")) {
-                if let Some(val_str) = line.split("values=").nth(1) {
-                    if let Ok(val) = val_str.trim().parse::<i32>() {
-                        volumes[i - 1] = Self::alsa_volume_to_db(val);
-                    }
-                }
+            if let Some(line) = stdout.lines().find(|l| l.contains("values="))
+                && let Some(val_str) = line.split("values=").nth(1)
+                && let Ok(val) = val_str.trim().parse::<i32>()
+            {
+                volumes[i - 1] = Self::alsa_volume_to_db(val);
             }
         }
 
@@ -759,18 +845,18 @@ impl ScarlettSolo {
     /// Channel names for the 12-channel level meter
     pub fn get_meter_channel_names() -> &'static [&'static str; 12] {
         &[
-            "Analogue 1",     // 0: XLR/Line In 1
-            "Analogue 2",     // 1: Line In 2
-            "DSP 1",          // 2
-            "DSP 2",          // 3
-            "Mix A L",        // 4
-            "Mix A R",        // 5
-            "Mix B L",        // 6
-            "Mix B R",        // 7
-            "PCM 1",          // 8: DAW playback L
-            "PCM 2",          // 9: DAW playback R
-            "PCM 3",          // 10
-            "PCM 4",          // 11
+            "Analogue 1", // 0: XLR/Line In 1
+            "Analogue 2", // 1: Line In 2
+            "DSP 1",      // 2
+            "DSP 2",      // 3
+            "Mix A L",    // 4
+            "Mix A R",    // 5
+            "Mix B L",    // 6
+            "Mix B R",    // 7
+            "PCM 1",      // 8: DAW playback L
+            "PCM 2",      // 9: DAW playback R
+            "PCM 3",      // 10
+            "PCM 4",      // 11
         ]
     }
 
@@ -779,8 +865,8 @@ impl ScarlettSolo {
         let meters = self.read_level_meters()?;
         let mut db_values = [-80.0f32; 12];
 
-        for i in 0..12 {
-            db_values[i] = meters.get_db(i);
+        for (i, db_val) in db_values.iter_mut().enumerate() {
+            *db_val = meters.get_db(i);
         }
 
         Ok(db_values)
@@ -821,9 +907,19 @@ impl CaptureSource {
 
     pub fn all() -> &'static [CaptureSource] {
         &[
-            Self::Off, Self::Analogue1, Self::Analogue2,
-            Self::MixA, Self::MixB, Self::MixC, Self::MixD, Self::MixE, Self::MixF,
-            Self::Dsp1, Self::Dsp2, Self::Pcm1, Self::Pcm2,
+            Self::Off,
+            Self::Analogue1,
+            Self::Analogue2,
+            Self::MixA,
+            Self::MixB,
+            Self::MixC,
+            Self::MixD,
+            Self::MixE,
+            Self::MixF,
+            Self::Dsp1,
+            Self::Dsp2,
+            Self::Pcm1,
+            Self::Pcm2,
         ]
     }
 }
@@ -929,9 +1025,9 @@ mod tests {
 
     #[test]
     fn test_air_mode_conversion() {
-        assert_eq!(AirMode::Off.to_alsa_index(), 0);
-        assert_eq!(AirMode::Presence.to_alsa_index(), 1);
-        assert_eq!(AirMode::PresenceDrive.to_alsa_index(), 2);
+        assert_eq!(AirMode::Off.alsa_index(), 0);
+        assert_eq!(AirMode::Presence.alsa_index(), 1);
+        assert_eq!(AirMode::PresenceDrive.alsa_index(), 2);
 
         assert_eq!(AirMode::from_alsa_index(0), AirMode::Off);
         assert_eq!(AirMode::from_alsa_index(1), AirMode::Presence);

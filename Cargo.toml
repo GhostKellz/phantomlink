@@ -8,17 +8,17 @@ license = "MIT"
 repository = "https://github.com/ghostkellz/phantomlink"
 
 [dependencies]
-eframe = "0.27"
+eframe = "0.29"
 dirs = "5"
-alsa = "0.7"
-cpal = "0.16"
+alsa = "0.11"
+cpal = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 nnnoiseless = "0.5"
 anyhow = "1.0"
 vst = "0.3"
 libloading = "0.8"
-jack = "0.12"
+jack = "0.13"
 crossbeam-channel = "0.5"
 realfft = "3.3"
 num-complex = "0.4"
@@ -29,17 +29,14 @@ toml = "0.8"
 env_logger = "0.11"
 
 # GhostWave v0.3.0 integration for RTX AI noise suppression
-# Enables full RTX 5090 Blackwell FP4 Tensor Core acceleration
-ghostwave-core = { path = "../ghostwave/ghostwave-core", optional = true, features = [
-    "nvidia-rtx",
-    "onnx-inference",
-    "cpal-backend",
-    "pipewire-backend"
-] }
+ghostwave-core = {
+    git = "https://github.com/ghostkellz/ghostwave",
+    tag = "v0.3.0",
+    optional = true,
+    features = ["nvidia-rtx", "cpal-backend", "pipewire-backend"]
+}
 
 [features]
 default = ["ghostwave", "rtx"]
 ghostwave = ["ghostwave-core"]
 rtx = ["ghostwave-core"]
-# Deep learning feature for ONNX model inference (requires ort crate)
-deep-learning = []

@@ -1,5 +1,5 @@
 Name:           phantomlink
-Version:        0.2.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Professional audio mixer and interface control for Linux
 
@@ -7,18 +7,17 @@ License:        MIT
 URL:            https://github.com/ghostkellz/phantomlink
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 
-BuildRequires:  rust >= 1.70
+BuildRequires:  rust >= 1.90
 BuildRequires:  cargo
 BuildRequires:  pkg-config
 BuildRequires:  alsa-lib-devel
 BuildRequires:  pipewire-devel
-BuildRequires:  gtk3-devel
 BuildRequires:  libxkbcommon-devel
 BuildRequires:  libxcb-devel
+BuildRequires:  jack-audio-connection-kit-devel
 
 Requires:       alsa-lib
 Requires:       pipewire
-Requires:       gtk3
 
 Recommends:     pipewire-pulseaudio
 Suggests:       akmod-nvidia
@@ -26,15 +25,15 @@ Suggests:       akmod-nvidia
 %description
 PhantomLink is a professional audio mixer and interface control application
 for Linux, designed for streamers, podcasters, and content creators. It
-provides a Wavelink-style experience with RTX-accelerated AI noise suppression
-powered by GhostWave.
+provides RTX-accelerated AI noise suppression powered by GhostWave.
 
 Features:
 - Focusrite Scarlett Solo 4th Gen full hardware control
 - RTX-accelerated AI noise suppression (GhostWave)
 - Professional channel strips with VU meters
 - Per-channel VST plugin support
-- Multiple theme presets
+- Tokyo Night theme (Night/Moon/Storm variants)
+- JACK audio integration
 - Echo cancellation (AEC)
 
 %prep
@@ -81,9 +80,14 @@ cargo test --release --locked || true
 %{_datadir}/icons/hicolor/*/apps/phantomlink.*
 
 %changelog
+* Sat May 10 2026 Christopher Kelley <ckelley@ghostkellz.sh> - 0.4.0-1
+- Upgrade eframe 0.27 to 0.29
+- Wire AudioRouter into AudioEngine
+- Add JACK client integration to GUI
+- Config persistence, 97 tests, docs cleanup
+
 * Sat Nov 30 2024 Christopher Kelley <ckelley@ghostkellz.sh> - 0.2.0-1
 - Initial package release
 - Focusrite Scarlett Solo 4th Gen support
 - GhostWave RTX AI noise suppression
 - Professional mixer with VU meters
-- Multiple theme presets

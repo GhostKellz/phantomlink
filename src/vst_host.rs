@@ -8,13 +8,13 @@
 
 #![allow(dead_code)] // Complete VST hosting API for plugin management
 
-use vst::host::{Host, PluginLoader, PluginInstance};
-use vst::plugin::{Plugin, Category};
-use vst::api::Events;
-use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
+use crossbeam_channel::{Receiver, Sender, bounded};
 use std::collections::HashMap;
-use crossbeam_channel::{Sender, Receiver, bounded};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use vst::api::Events;
+use vst::host::{Host, PluginInstance, PluginLoader};
+use vst::plugin::{Category, Plugin};
 
 pub struct VstHost {
     plugin_id: i32,
@@ -60,7 +60,6 @@ impl Host for VstHost {
     fn get_block_size(&self) -> isize {
         self.buffer_size as isize
     }
-
 }
 
 /// Message types for VST processor thread communication
@@ -72,23 +71,16 @@ enum VstMessage {
         response: Sender<Vec<f32>>,
     },
     /// Set a parameter value
-    SetParameter {
-        index: i32,
-        value: f32,
-    },
+    SetParameter { index: i32, value: f32 },
     /// Get parameter info (name, display value)
     GetParameterInfo {
         index: i32,
         response: Sender<Option<ParameterInfo>>,
     },
     /// Request all parameter values
-    GetAllParameters {
-        response: Sender<HashMap<i32, f32>>,
-    },
+    GetAllParameters { response: Sender<HashMap<i32, f32>> },
     /// Set enabled state
-    SetEnabled {
-        enabled: bool,
-    },
+    SetEnabled { enabled: bool },
     /// Shutdown the processor
     Shutdown,
 }
@@ -118,7 +110,7 @@ pub struct VstProcessor {
 
 // Thread-safe VST processor that handles audio in a separate thread
 impl VstProcessor {
-    pub fn load(plugin_path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(plugin_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let plugin_name = plugin_path
             .file_name()
             .unwrap_or_default()
@@ -132,14 +124,19 @@ impl VstProcessor {
         let (message_sender, message_receiver) = bounded::<VstMessage>(64);
 
         // Clone the path for the thread
-        let plugin_path_clone = plugin_path.clone();
+        let plugin_path_clone = plugin_path.to_path_buf();
 
         // Get parameter count by loading plugin temporarily
         let parameter_count = Self::query_parameter_count(&plugin_path_clone)?;
 
         // Start the processing thread
         let processing_thread = std::thread::spawn(move || {
-            Self::processor_thread_main(plugin_path_clone, sample_rate, buffer_size, message_receiver);
+            Self::processor_thread_main(
+                plugin_path_clone,
+                sample_rate,
+                buffer_size,
+                message_receiver,
+            );
         });
 
         // Initialize default parameter values
@@ -150,7 +147,7 @@ impl VstProcessor {
 
         Ok(Self {
             plugin_name,
-            plugin_path: plugin_path.clone(),
+            plugin_path: plugin_path.to_path_buf(),
             enabled: true,
             parameters,
             parameter_count,
@@ -162,7 +159,7 @@ impl VstProcessor {
     }
 
     /// Get parameter count from plugin without keeping it loaded
-    fn query_parameter_count(plugin_path: &PathBuf) -> Result<i32, Box<dyn std::error::Error>> {
+    fn query_parameter_count(plugin_path: &Path) -> Result<i32, Box<dyn std::error::Error>> {
         let host = Arc::new(Mutex::new(VstHost::new()));
         let mut loader = PluginLoader::load(plugin_path, host)?;
         let plugin_instance = loader.instance()?;
@@ -194,7 +191,11 @@ impl VstProcessor {
                     match message {
                         VstMessage::ProcessAudio { input, response } => {
                             let output = if enabled {
-                                Self::process_audio_with_plugin(&mut plugin_instance, &input, buffer_size)
+                                Self::process_audio_with_plugin(
+                                    &mut plugin_instance,
+                                    &input,
+                                    buffer_size,
+                                )
                             } else {
                                 input
                             };
@@ -252,9 +253,9 @@ impl VstProcessor {
     }
 
     fn load_plugin_instance(
-        plugin_path: &PathBuf,
+        plugin_path: &Path,
         sample_rate: f32,
-        buffer_size: usize
+        buffer_size: usize,
     ) -> Result<PluginInstance, Box<dyn std::error::Error>> {
         let host = Arc::new(Mutex::new(VstHost::new()));
         let mut loader = PluginLoader::load(plugin_path, host)?;
@@ -271,7 +272,7 @@ impl VstProcessor {
     fn process_audio_with_plugin(
         plugin: &mut PluginInstance,
         input: &[f32],
-        _buffer_size: usize
+        _buffer_size: usize,
     ) -> Vec<f32> {
         if input.is_empty() {
             return Vec::new();
@@ -291,24 +292,20 @@ impl VstProcessor {
                 (0..frame_count)
                     .map(|frame| {
                         let idx = frame * num_inputs + ch;
-                        if idx < input.len() {
-                            input[idx]
-                        } else {
-                            0.0
-                        }
+                        if idx < input.len() { input[idx] } else { 0.0 }
                     })
                     .collect()
             })
             .collect();
 
         // Create output buffers
-        let mut output_buffers: Vec<Vec<f32>> = (0..num_outputs)
-            .map(|_| vec![0.0; frame_count])
-            .collect();
+        let mut output_buffers: Vec<Vec<f32>> =
+            (0..num_outputs).map(|_| vec![0.0; frame_count]).collect();
 
         // Convert to raw pointers for VST AudioBuffer API
         let input_ptrs: Vec<*const f32> = input_buffers.iter().map(|b| b.as_ptr()).collect();
-        let mut output_ptrs: Vec<*mut f32> = output_buffers.iter_mut().map(|b| b.as_mut_ptr()).collect();
+        let mut output_ptrs: Vec<*mut f32> =
+            output_buffers.iter_mut().map(|b| b.as_mut_ptr()).collect();
 
         // Create AudioBuffer from raw pointers and process
         // Safety: pointers are valid for the duration of this function call
@@ -326,8 +323,8 @@ impl VstProcessor {
         // Interleave output back to single buffer
         let mut output = Vec::with_capacity(frame_count * num_outputs);
         for frame in 0..frame_count {
-            for ch in 0..num_outputs {
-                output.push(output_buffers[ch][frame]);
+            for buf in output_buffers.iter().take(num_outputs) {
+                output.push(buf[frame]);
             }
         }
 
@@ -350,7 +347,9 @@ impl VstProcessor {
             // Send audio for processing
             if sender.try_send(message).is_ok() {
                 // Try to get the result with a timeout
-                if let Ok(processed_audio) = response_receiver.recv_timeout(std::time::Duration::from_millis(10)) {
+                if let Ok(processed_audio) =
+                    response_receiver.recv_timeout(std::time::Duration::from_millis(10))
+                {
                     return processed_audio;
                 }
             }
@@ -394,10 +393,11 @@ impl VstProcessor {
                 response: response_sender,
             };
 
-            if sender.try_send(message).is_ok() {
-                if let Ok(info) = response_receiver.recv_timeout(std::time::Duration::from_millis(100)) {
-                    return info;
-                }
+            if sender.try_send(message).is_ok()
+                && let Ok(info) =
+                    response_receiver.recv_timeout(std::time::Duration::from_millis(100))
+            {
+                return info;
             }
         }
         None
@@ -412,10 +412,11 @@ impl VstProcessor {
                 response: response_sender,
             };
 
-            if sender.try_send(message).is_ok() {
-                if let Ok(params) = response_receiver.recv_timeout(std::time::Duration::from_millis(100)) {
-                    return params;
-                }
+            if sender.try_send(message).is_ok()
+                && let Ok(params) =
+                    response_receiver.recv_timeout(std::time::Duration::from_millis(100))
+            {
+                return params;
             }
         }
         self.parameters.clone()
@@ -534,57 +535,58 @@ impl VstScanner {
             PathBuf::from("/usr/lib/lxvst"),
             PathBuf::from("/usr/local/lib/lxvst"),
         ];
-        
+
         if let Some(home) = dirs::home_dir() {
             scan_paths.push(home.join(".vst"));
             scan_paths.push(home.join(".local/lib/vst"));
         }
-        
+
         Self {
             plugins: Vec::new(),
             scan_paths,
         }
     }
-    
+
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.plugins.clear();
-        
+
         let scan_paths = self.scan_paths.clone();
         for scan_path in &scan_paths {
             if scan_path.exists() {
                 self.scan_directory(scan_path)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn scan_directory(&mut self, dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "so") {
-                    if let Ok(plugin_info) = self.scan_plugin(&path) {
-                        self.plugins.push(plugin_info);
-                    }
+
+                if path.is_file()
+                    && path.extension().is_some_and(|ext| ext == "so")
+                    && let Ok(plugin_info) = self.scan_plugin(&path)
+                {
+                    self.plugins.push(plugin_info);
                 }
             }
         }
-        
+
         Ok(())
     }
-    
-    fn scan_plugin(&self, plugin_path: &PathBuf) -> Result<VstPluginInfo, Box<dyn std::error::Error>> {
+
+    fn scan_plugin(&self, plugin_path: &Path) -> Result<VstPluginInfo, Box<dyn std::error::Error>> {
         // Try to load the plugin and get its info
         let host = Arc::new(Mutex::new(VstHost::new()));
-        
+
         let mut loader = PluginLoader::load(plugin_path, host)?;
         let plugin_instance = loader.instance()?;
         let info = plugin_instance.get_info();
-        
+
         Ok(VstPluginInfo {
-            path: plugin_path.clone(),
+            path: plugin_path.to_path_buf(),
             name: info.name.clone(),
             vendor: info.vendor.clone(),
             category: VstCategory::from(info.category),
@@ -596,16 +598,158 @@ impl VstScanner {
             is_synth: matches!(info.category, Category::Synth),
         })
     }
-    
+
     pub fn get_plugins(&self) -> &[VstPluginInfo] {
         &self.plugins
     }
-    
+
     pub fn get_plugins_by_category(&self, category: VstCategory) -> Vec<&VstPluginInfo> {
-        self.plugins.iter().filter(|p| p.category == category).collect()
+        self.plugins
+            .iter()
+            .filter(|p| p.category == category)
+            .collect()
     }
-    
+
     pub fn find_plugin_by_name(&self, name: &str) -> Option<&VstPluginInfo> {
         self.plugins.iter().find(|p| p.name == name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vst::host::Host;
+
+    #[test]
+    fn test_vst_host_defaults() {
+        let host = VstHost::new();
+        assert_eq!(host.get_plugin_id(), 1000);
+        assert_eq!(host.get_block_size(), 1024);
+    }
+
+    #[test]
+    fn test_vst_host_info() {
+        let host = VstHost::new();
+        let (version, name, vendor) = host.get_info();
+        assert_eq!(name, "PhantomLink");
+        assert_eq!(vendor, "Anthropic");
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn test_vst_host_time_info_none() {
+        let host = VstHost::new();
+        assert!(host.get_time_info(0).is_none());
+    }
+
+    #[test]
+    fn test_vst_scanner_initialization() {
+        let scanner = VstScanner::new();
+        assert!(scanner.get_plugins().is_empty());
+        assert!(scanner.scan_paths.len() >= 4);
+    }
+
+    #[test]
+    fn test_vst_scanner_find_nonexistent() {
+        let scanner = VstScanner::new();
+        assert!(scanner.find_plugin_by_name("NonExistent").is_none());
+    }
+
+    #[test]
+    fn test_vst_scanner_category_filter_empty() {
+        let scanner = VstScanner::new();
+        assert!(scanner.get_plugins_by_category(VstCategory::Effect).is_empty());
+    }
+
+    #[test]
+    fn test_vst_category_from_vst_category() {
+        assert_eq!(VstCategory::from(Category::Effect), VstCategory::Effect);
+        assert_eq!(VstCategory::from(Category::Synth), VstCategory::Synth);
+        assert_eq!(VstCategory::from(Category::Generator), VstCategory::Generator);
+        assert_eq!(VstCategory::from(Category::Mastering), VstCategory::Mastering);
+    }
+
+    #[test]
+    fn test_vst_category_all_variants() {
+        // Verify all category conversions work
+        assert_eq!(VstCategory::from(Category::Analysis), VstCategory::Analysis);
+        assert_eq!(VstCategory::from(Category::Spacializer), VstCategory::SpaciaIizer);
+        assert_eq!(VstCategory::from(Category::RoomFx), VstCategory::RoomFx);
+        assert_eq!(VstCategory::from(Category::SurroundFx), VstCategory::SurroundFx);
+        assert_eq!(VstCategory::from(Category::Restoration), VstCategory::Restoration);
+        assert_eq!(VstCategory::from(Category::OfflineProcess), VstCategory::OfflineProcess);
+        assert_eq!(VstCategory::from(Category::Shell), VstCategory::Shell);
+    }
+
+    #[test]
+    fn test_vst_scanner_scan_paths_include_standard_dirs() {
+        let scanner = VstScanner::new();
+        let paths: Vec<String> = scanner.scan_paths.iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        assert!(paths.iter().any(|p| p.contains("/usr/lib/vst")));
+        assert!(paths.iter().any(|p| p.contains("/usr/local/lib/vst")));
+        assert!(paths.iter().any(|p| p.contains("/usr/lib/lxvst")));
+    }
+
+    #[test]
+    fn test_vst_scanner_scan_no_crash() {
+        // Scan should complete without error even if no plugins found
+        let mut scanner = VstScanner::new();
+        let result = scanner.scan();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_vst_host_sample_rate_and_buffer() {
+        let host = VstHost::new();
+        assert_eq!(host.sample_rate, 48000.0);
+        assert_eq!(host.buffer_size, 1024);
+        assert_eq!(host.get_block_size(), 1024);
+    }
+
+    #[test]
+    fn test_vst_processor_parameter_cache() {
+        // Test the parameter cache behavior without loading an actual plugin
+        let mut params: HashMap<i32, f32> = HashMap::new();
+
+        // Simulate parameter insertion (as VstProcessor::load does)
+        for i in 0..5 {
+            params.insert(i, 0.5);
+        }
+
+        assert_eq!(params.len(), 5);
+        assert_eq!(*params.get(&0).unwrap(), 0.5);
+
+        // Simulate set_parameter (clamping + update)
+        let value = 1.5f32.clamp(0.0, 1.0);
+        params.insert(2, value);
+        assert_eq!(*params.get(&2).unwrap(), 1.0);
+
+        let value = (-0.5f32).clamp(0.0, 1.0);
+        params.insert(3, value);
+        assert_eq!(*params.get(&3).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_vst_plugin_info_struct() {
+        let info = VstPluginInfo {
+            path: PathBuf::from("/usr/lib/vst/test.so"),
+            name: "TestPlugin".to_string(),
+            vendor: "TestVendor".to_string(),
+            category: VstCategory::Effect,
+            unique_id: 12345,
+            version: 1,
+            inputs: 2,
+            outputs: 2,
+            parameters: 10,
+            is_synth: false,
+        };
+
+        assert_eq!(info.name, "TestPlugin");
+        assert_eq!(info.category, VstCategory::Effect);
+        assert!(!info.is_synth);
+        assert_eq!(info.parameters, 10);
     }
 }

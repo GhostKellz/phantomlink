@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/ghostkellz/phantomlink/tree/main/docs
+    about: Check documentation before filing an issue
